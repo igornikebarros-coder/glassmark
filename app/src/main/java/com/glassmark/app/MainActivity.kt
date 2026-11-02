@@ -106,7 +106,7 @@ private fun GlassmarkScreen(dao: LinkDao) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp)) {
                         Icon(Icons.Default.Search, contentDescription = "Buscar", tint = muted)
                         TextField(value = search, onValueChange = { search = it }, placeholder = { Text("Buscar links...", color = muted, fontSize = font(14)) },
-                            modifier = Modifier.weight(1f), colors = TextFieldDefaults.colors(containerColor = Color.Transparent,
+                            modifier = Modifier.weight(1f), colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
                                 focusedTextColor = primaryText, unfocusedTextColor = primaryText), singleLine = true)
