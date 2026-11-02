@@ -12,8 +12,8 @@ android {
         applicationId = "com.glassmark.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
     // Assinatura fixa (mesmo SHA-1 em todos os builds). No GitHub Actions o keystore vem dos secrets.
     val keystorePath = System.getenv("KEYSTORE_PATH")
