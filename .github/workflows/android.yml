@@ -45,6 +45,12 @@ jobs:
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep -E "SHA-(1|256) digest"
 
+      - name: Verificar ícone e versão do APK (aapt)
+        run: |
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk | grep -E "^package:|application-icon|application-label:|launchable-activity|^application:"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "ic_launcher|mipmap" | head -30
+
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk Link.apk
 
@@ -55,15 +61,11 @@ jobs:
           path: Link.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release (nova tag a cada build, marcada como latest)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=v1.0
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" Link.apk --clobber
-          else
-            gh release create "$TAG" Link.apk --target "${GITHUB_SHA}" \
-              --title "Link $TAG" \
-              --notes "APK do Link (assinatura fixa), gerado automaticamente pelo GitHub Actions."
-          fi
+          TAG="v1.6.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" Link.apk --target "${GITHUB_SHA}" --latest \
+            --title "Link $TAG" \
+            --notes "APK do Link $TAG (versionCode $((100 + GITHUB_RUN_NUMBER))), assinatura fixa, gerado automaticamente pelo GitHub Actions. Link estável: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/Link.apk"

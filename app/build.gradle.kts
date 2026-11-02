@@ -12,8 +12,11 @@ android {
         applicationId = "com.glassmark.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5"
+        // No CI (GitHub Actions) a versão sobe a cada build: code = 100 + nº da execução, name = 1.6.<execução>.
+        // Localmente usa valores fixos.
+        val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        versionCode = if (runNumber != null) 100 + runNumber else 6
+        versionName = if (runNumber != null) "1.6.$runNumber" else "1.6-local"
     }
     // Assinatura fixa (mesmo SHA-1 em todos os builds). No GitHub Actions o keystore vem dos secrets.
     val keystorePath = System.getenv("KEYSTORE_PATH")
