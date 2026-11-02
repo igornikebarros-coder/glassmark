@@ -49,7 +49,8 @@ def polygon(c, steps=24):
 
 # ---------- cores ----------
 BG_TOP, BG_BOT = (0x86, 0xC3, 0xFD), (0x44, 0x90, 0xFD)
-BODY_TOP, BODY_BOT = (0xFF, 0xFF, 0xFF), (0xCB, 0xE0, 0xFC)
+RIM_TOP, RIM_BOT = (0xEA, 0xF5, 0xFF), (0xB4, 0xD6, 0xFB)
+PANEL_TOP, PANEL_BOT = (0xFF, 0xFF, 0xFF), (0xDD, 0xEB, 0xFD)
 
 # ---------- vetores ----------
 def write(path, text):
@@ -57,7 +58,7 @@ def write(path, text):
     open(path, "w").write(text)
 
 hx = lambda c: "#%02X%02X%02X" % c
-write(f"{RES}/drawable/ic_launcher_background.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
+write(f"{RES}/drawable/ic_link_background.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:pathData="M0,0h108v108h-108z">
@@ -70,41 +71,44 @@ write(f"{RES}/drawable/ic_launcher_background.xml", f'''<vector xmlns:android="h
 ''')
 
 shadow = ""
-for dy, a in [(1.0, "30"), (2.2, "22"), (3.6, "14")]:
-    shadow += f'    <path android:fillColor="#{a}1B56C8" android:pathData="{svg_path(cmds(0, dy))}"/>\n'
-write(f"{RES}/drawable/ic_launcher_foreground.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
+for dy, a_ in [(1.0, "30"), (2.2, "22"), (3.6, "14")]:
+    shadow += f'    <path android:fillColor="#{a_}1B56C8" android:pathData="{svg_path(cmds(0, dy))}"/>\n'
+
+def grad(y0, y1, c0, c1):
+    return (f'        <aapt:attr name="android:fillColor">\n'
+            f'            <gradient android:type="linear" android:startX="54" android:startY="{y0}" android:endX="54" android:endY="{y1}"\n'
+            f'                android:startColor="{c0}" android:endColor="{c1}"/>\n        </aapt:attr>\n')
+
+write(f"{RES}/drawable/ic_link_foreground.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <!-- sombra suave -->
-{shadow}    <!-- corpo de vidro -->
-    <path android:pathData="{svg_path(cmds())}" android:strokeColor="#FFFFFF" android:strokeAlpha="0.85" android:strokeWidth="0.9">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="54" android:startY="{Y0}" android:endX="54" android:endY="{Y1}"
-                android:startColor="{hx(BODY_TOP)}" android:endColor="{hx(BODY_BOT)}"/>
-        </aapt:attr>
-    </path>
-    <!-- brilho interno -->
-    <path android:pathData="{svg_path(cmds(2.4))}">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="54" android:startY="{Y0+2.4}" android:endX="54" android:endY="{Y0+22}"
-                android:startColor="#B3FFFFFF" android:endColor="#00FFFFFF"/>
-        </aapt:attr>
-    </path>
+{shadow}    <!-- halo externo do vidro -->
+    <path android:pathData="{svg_path(cmds(0))}" android:strokeColor="#FFFFFF" android:strokeAlpha="0.35" android:strokeWidth="2.8"/>
+    <!-- aro de vidro (translúcido) -->
+    <path android:pathData="{svg_path(cmds())}" android:strokeColor="#FFFFFF" android:strokeAlpha="0.9" android:strokeWidth="1">
+{grad(Y0, Y1, hx(RIM_TOP), hx(RIM_BOT))}    </path>
+    <!-- painel interno -->
+    <path android:pathData="{svg_path(cmds(2.6))}" android:strokeColor="#7FB3F5" android:strokeAlpha="0.5" android:strokeWidth="0.6">
+{grad(Y0 + 2.6, Y1 - 2.6, hx(PANEL_TOP), hx(PANEL_BOT))}    </path>
+    <!-- brilho -->
+    <path android:pathData="{svg_path(cmds(3.4))}">
+{grad(Y0 + 3.4, Y0 + 22, "#99FFFFFF", "#00FFFFFF")}    </path>
 </vector>
 ''')
-write(f"{RES}/drawable/ic_launcher_monochrome.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
+write(f"{RES}/drawable/ic_link_monochrome.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="#000000" android:pathData="{svg_path(cmds())}"/>
 </vector>
 ''')
 adaptive = '''<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background"/>
-    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>
+    <background android:drawable="@drawable/ic_link_background"/>
+    <foreground android:drawable="@drawable/ic_link_foreground"/>
+    <monochrome android:drawable="@drawable/ic_link_monochrome"/>
 </adaptive-icon>
 '''
-write(f"{RES}/mipmap-anydpi-v26/ic_launcher.xml", adaptive)
-write(f"{RES}/mipmap-anydpi-v26/ic_launcher_round.xml", adaptive)
+write(f"{RES}/mipmap-anydpi-v26/ic_link.xml", adaptive)
+write(f"{RES}/mipmap-anydpi-v26/ic_link_round.xml", adaptive)
 
 # ---------- raster (mipmaps legados + preview) ----------
 SS = 4
@@ -128,28 +132,35 @@ def render(size, shape):
     T = lambda pts: [((x - off) * scale, (y - off) * scale) for x, y in pts]
     # fundo
     img = vgrad(S, S, 18, 90, BG_TOP, BG_BOT, scale, off).convert("RGBA")
+    def polymask(c):
+        m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(c)), fill=255); return m
+    def solid(rgb, m, alpha=1.0):
+        return Image.merge("RGBA", (*Image.new("RGB", (S, S), rgb).split(), m.point(lambda v: int(v * alpha))))
+    def ring(m, w):
+        k = max(3, int(w * scale) // 2 * 2 + 1)
+        return ImageChops.subtract(m.filter(ImageFilter.MaxFilter(k)), m.filter(ImageFilter.MinFilter(k)))
+    def gradfill(c, y0, y1, c0, c1, a0=1.0, a1=1.0):
+        m = polymask(c)
+        g = vgrad(S, S, y0, y1, c0, c1, scale, off).convert("RGBA")
+        ramp = Image.new("L", (1, S))
+        for y in range(S):
+            t = min(max((y / scale + off - y0) / (y1 - y0), 0), 1)
+            ramp.putpixel((0, y), int(255 * (a0 + (a1 - a0) * t)))
+        g.putalpha(ImageChops.multiply(m, ramp.resize((S, S))))
+        return g
     # sombra
-    for dy, a in [(1.0, 0x30), (2.2, 0x22), (3.6, 0x14)]:
-        m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(cmds(0, dy))), fill=a)
-        img = Image.composite(Image.new("RGBA", (S, S), (0x1B, 0x56, 0xC8, 255)), img, m) if False else \
-            Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (0x1B, 0x56, 0xC8)).split(), m)))
-    # corpo
-    m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(cmds())), fill=255)
-    body = vgrad(S, S, Y0, Y1, BODY_TOP, BODY_BOT, scale, off).convert("RGBA")
-    img = Image.composite(body, img, m)
-    # contorno claro
-    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(max(3, int(0.9*scale)//2*2+1))))
-    img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (255, 255, 255)).split(), edge.point(lambda v: int(v*0.85)))))
-    # brilho interno
-    m2 = Image.new("L", (S, S), 0); ImageDraw.Draw(m2).polygon(T(polygon(cmds(2.4))), fill=255)
-    ramp = Image.new("L", (1, S))
-    for y in range(S):
-        vy = y / scale + off
-        t = min(max((vy - (Y0 + 2.4)) / 19.6, 0), 1)
-        ramp.putpixel((0, y), int(0xB3 * (1 - t)))
-    ramp = ramp.resize((S, S))
-    glow = ImageChops.multiply(m2, ramp)
-    img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (255, 255, 255)).split(), glow)))
+    for dy, a_ in [(1.0, 0x30), (2.2, 0x22), (3.6, 0x14)]:
+        img = Image.alpha_composite(img, solid((0x1B, 0x56, 0xC8), polymask(cmds(0, dy)), a_ / 255))
+    # halo externo
+    img = Image.alpha_composite(img, solid((255, 255, 255), ring(polymask(cmds()), 2.8 + 0.0), 0.35))
+    # aro de vidro
+    img = Image.alpha_composite(img, gradfill(cmds(), Y0, Y1, RIM_TOP, RIM_BOT))
+    img = Image.alpha_composite(img, solid((255, 255, 255), ring(polymask(cmds()), 1.0), 0.9))
+    # painel interno
+    img = Image.alpha_composite(img, gradfill(cmds(2.6), Y0 + 2.6, Y1 - 2.6, PANEL_TOP, PANEL_BOT))
+    img = Image.alpha_composite(img, solid((0x7F, 0xB3, 0xF5), ring(polymask(cmds(2.6)), 0.6), 0.5))
+    # brilho
+    img = Image.alpha_composite(img, gradfill(cmds(3.4), Y0 + 3.4, Y0 + 22, (255, 255, 255), (255, 255, 255), 0.6, 0.0))
     # máscara da forma
     mask = Image.new("L", (S, S), 0); d = ImageDraw.Draw(mask)
     if shape == "circle":
@@ -170,8 +181,8 @@ dens = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 for k, px in dens.items():
     d = f"{RES}/mipmap-{k}"
     os.makedirs(d, exist_ok=True)
-    render(px, "squircle").save(f"{d}/ic_launcher.png")
-    render(px, "circle").save(f"{d}/ic_launcher_round.png")
+    render(px, "squircle").save(f"{d}/ic_link.png")
+    render(px, "circle").save(f"{d}/ic_link_round.png")
 
 # ---------- preview ----------
 big = render(512, "squircle")

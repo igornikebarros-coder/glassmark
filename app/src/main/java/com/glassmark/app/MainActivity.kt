@@ -355,6 +355,12 @@ private fun SettingsDialog(
                     if (user != null) {
                         SettingRow(label = "Sair da conta", p = p) { TextButton(onClick = onLogout) { Text("Sair", color = p.error) } }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = p.divider)
+                    SectionHeader("SOBRE", p)
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    val versionName = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
+                    SettingRow(label = "Versão do app", p = p) { Text(versionName, color = p.muted, fontSize = 14.sp) }
                 }
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider(color = p.divider)
