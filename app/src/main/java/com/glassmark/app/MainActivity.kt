@@ -119,9 +119,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("GLASSMARK", color = muted, fontSize = font(11), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                        Text("Sua biblioteca", color = primaryText, fontSize = font(28), fontWeight = FontWeight.SemiBold)
-                        Text("Links e ideias, em um só lugar", color = muted, fontSize = font(13))
+                        Text("$greeting${firstName?.let { ", $it" } ?: ""} 👋", color = primaryText, fontSize = font(28), fontWeight = FontWeight.SemiBold)
+                        Text("O que vamos guardar hoje?", color = muted, fontSize = font(13))
                     }
                     GlassTile(glass) {
                         Box(Modifier.size(52.dp).clickable { showSettings = true }, contentAlignment = Alignment.Center) {
@@ -209,7 +208,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Compartilhe um link com o Glassmark para salvá-lo.",
+                                "Compartilhe um link com o Link para salvá-lo.",
                                 color = muted,
                                 fontSize = font(13),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
