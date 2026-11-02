@@ -47,8 +47,6 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handleShare(intent)
         setContent {
             val user by vm.user.collectAsState()
-    val customAvatarUri by vm.customAvatarUri.collectAsState()
-    val customAvatarUri by vm.customAvatarUri.collectAsState()
             val guest by vm.guest.collectAsState()
             if (user == null && !guest) GlassmarkTheme { AuthScreen(vm) } else GlassmarkScreen(vm)
         }
@@ -73,6 +71,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val links by vm.links.collectAsState()
     val allCollections by vm.collections.collectAsState()
     val user by vm.user.collectAsState()
+    val customAvatarUri by vm.customAvatarUri.collectAsState()
     val syncError by vm.syncError.collectAsState()
     val offerUpload by vm.offerUpload.collectAsState()
     val guestCount by vm.guestCount.collectAsState()
