@@ -142,9 +142,15 @@ for k, px in dens.items():
     render(px, "squircle").save(f"{d}/ic_link.png")
     render(px, "circle").save(f"{d}/ic_link_round.png")
 
-os.makedirs(f"{RES}/drawable-nodpi", exist_ok=True)
-render(432, "layer", "bg").convert("RGB").save(f"{RES}/drawable-nodpi/ic_link_bg.png")
-render(432, "layer", "fg").save(f"{RES}/drawable-nodpi/ic_link_fg.png")
+# Camadas adaptativas: cada layer tem de medir exatamente 108dp -> px = 108 * dpi/160 em cada bucket.
+# (Em drawable-nodpi o PNG de 432px vira ~144dp em aparelhos xxhdpi e alguns launchers, como o One UI,
+#  desenham a camada no tamanho intrínseco, deixando o marcador gigante.)
+import shutil
+shutil.rmtree(f"{RES}/drawable-nodpi", ignore_errors=True)
+for k, px in {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}.items():
+    os.makedirs(f"{RES}/drawable-{k}", exist_ok=True)
+    render(px, "layer", "bg").convert("RGB").save(f"{RES}/drawable-{k}/ic_link_bg.png")
+    render(px, "layer", "fg").save(f"{RES}/drawable-{k}/ic_link_fg.png")
 
 # ---------- preview ----------
 big = render(512, "squircle")

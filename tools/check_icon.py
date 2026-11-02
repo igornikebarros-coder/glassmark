@@ -4,7 +4,7 @@ import sys, math
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 R, PREV, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 new = Image.open(PREV).convert('RGBA')
-bg = Image.open(R + '/drawable-nodpi/ic_link_bg.png').convert('RGBA'); fg = Image.open(R + '/drawable-nodpi/ic_link_fg.png').convert('RGBA')
+bg = Image.open(R + '/drawable-xxxhdpi/ic_link_bg.png').convert('RGBA'); fg = Image.open(R + '/drawable-xxxhdpi/ic_link_fg.png').convert('RGBA')
 full = Image.alpha_composite(bg, fg)
 def mask(S, shape):
     Sx = S * 4; m = Image.new('L', (Sx, Sx), 0); d = ImageDraw.Draw(m)
