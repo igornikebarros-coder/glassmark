@@ -5,3 +5,6 @@ build/
 local.properties
 *.apk
 .DS_Store
+*.jks
+*.keystore
+keystore*.b64

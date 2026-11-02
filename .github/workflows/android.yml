@@ -26,8 +26,24 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK (assinado com a chave debug)
+      - name: Preparar keystore fixa (secrets)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/glassmark.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/glassmark.jks" >> "$GITHUB_ENV"
+
+      - name: Build APK (assinado com a keystore fixa)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleDebug --stacktrace
+
+      - name: Mostrar assinatura do APK
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep -E "SHA-(1|256) digest"
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk Glassmark.apk
@@ -49,5 +65,5 @@ jobs:
           else
             gh release create "$TAG" Glassmark.apk --target "${GITHUB_SHA}" \
               --title "Glassmark $TAG" \
-              --notes "APK de debug do Glassmark, gerado automaticamente pelo GitHub Actions."
+              --notes "APK do Glassmark (assinatura fixa), gerado automaticamente pelo GitHub Actions."
           fi

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "988082779300",
+    "project_id": "glassmark-ee5d4",
+    "storage_bucket": "glassmark-ee5d4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:988082779300:android:a8928536411ba7ec236231",
+        "android_client_info": {
+          "package_name": "com.glassmark.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB79OKs1IYXdnCPnkpVKFbQQn0X6xnGm5Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
