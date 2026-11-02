@@ -1,4 +1,5 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#D9F3FCFF" android:strokeColor="#F4FFFFFF" android:strokeWidth="3.5" android:strokeLineJoin="round" android:pathData="M34,22h40c7,0 12,5 12,12v47c0,5 -5,8 -9,5L54,72 31,86c-5,3 -9,0 -9,-5V34c0,-7 5,-12 12,-12z"/>
-    <path android:fillColor="#40FFFFFF" android:pathData="M34,27h40c4,0 7,3 7,7v43L54,66 27,82V34c0,-4 3,-7 7,-7z"/>
+    <!-- Frosted bookmark glyph based on the provided reference -->
+    <path android:fillColor="#BFEAF6FF" android:strokeColor="#F5FFFFFF" android:strokeWidth="3.2" android:strokeLineJoin="round" android:pathData="M36,29h36c7,0 11,5 11,12v32c0,5 -4,8 -9,5L54,66 34,78c-5,3 -9,0 -9,-5V41c0,-7 4,-12 11,-12z"/>
+    <path android:fillColor="#45FFFFFF" android:strokeColor="#70FFFFFF" android:strokeWidth="1.2" android:strokeLineJoin="round" android:pathData="M37,34h34c4,0 7,3 7,7v31L54,61 30,75V41c0,-4 3,-7 7,-7z"/>
 </vector>
