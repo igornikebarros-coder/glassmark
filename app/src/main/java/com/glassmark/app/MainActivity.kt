@@ -136,11 +136,28 @@ private fun GlassmarkScreen(dao: LinkDao) {
                 Spacer(Modifier.height(10.dp))
                 if (filtered.isEmpty()) {
                     GlassPanel(glass, RoundedCornerShape(26.dp), Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Icon(Icons.Default.Bookmark, contentDescription = null, tint = muted, modifier = Modifier.size(34.dp))
-                            Spacer(Modifier.height(8.dp))
-                            Text("Sua biblioteca está vazia", color = primaryText, fontSize = font(16), fontWeight = FontWeight.Medium)
-                            Text("Compartilhe um link com o Glassmark para salvá-lo.", color = muted, fontSize = font(13))
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                "Sua biblioteca está vazia",
+                                color = primaryText,
+                                fontSize = font(16),
+                                fontWeight = FontWeight.Medium,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Compartilhe um link com o Glassmark para salvá-lo.",
+                                color = muted,
+                                fontSize = font(13),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 } else {
