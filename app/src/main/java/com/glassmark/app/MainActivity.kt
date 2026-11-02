@@ -53,7 +53,9 @@ class MainActivity : ComponentActivity() {
             val user by vm.user.collectAsState()
             val guest by vm.guest.collectAsState()
             val mode by vm.themeMode.collectAsState()
-            GlassmarkTheme(mode) {
+            val amoledDark by vm.amoledInDark.collectAsState()
+            val font by vm.appFont.collectAsState()
+            GlassmarkTheme(mode, amoledDark, font) {
                 if (user == null && !guest) AuthScreen(vm) else GlassmarkScreen(vm)
             }
         }
@@ -88,6 +90,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var collectionFilter by remember { mutableStateOf("Todos") }
     val theme by vm.themeMode.collectAsState()
     val scale by vm.textScale.collectAsState()
+    val amoledDark by vm.amoledInDark.collectAsState()
+    val appFont by vm.appFont.collectAsState()
     val context = LocalContext.current
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -283,8 +287,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         }
         if (showSettings) {
             SettingsDialog(
-                p = p, theme = theme, scale = scale, user = user, hasCustomAvatar = customAvatarUri != null,
-                onTheme = vm::setThemeMode, onScale = vm::setTextScale,
+                p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, user = user, hasCustomAvatar = customAvatarUri != null,
+                onTheme = vm::setThemeMode, onScale = vm::setTextScale, onAmoledInDark = vm::setAmoledInDark, onFont = vm::setAppFont,
                 onPickAvatar = { avatarPicker.launch(arrayOf("image/*")) },
                 onResetAvatar = { vm.saveCustomAvatar(null) },
                 onLogin = { showSettings = false; vm.goToLogin() },
@@ -308,8 +312,8 @@ private fun GlassTile(color: Color, content: @Composable BoxScope.() -> Unit) {
 
 @Composable
 private fun SettingsDialog(
-    p: Palette, theme: ThemeMode, scale: TextScale, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
-    onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit,
+    p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
+    onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit, onAmoledInDark: (Boolean) -> Unit, onFont: (AppFont) -> Unit,
     onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
 ) {
     Dialog(onDismissRequest = onClose) {
@@ -329,6 +333,20 @@ private fun SettingsDialog(
                     Text("Tema", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
                     ThemeMode.entries.forEach { m ->
                         SettingRow(label = m.label, p = p, onClick = { onTheme(m) }) { RadioButton(selected = theme == m, onClick = null, colors = radioColors(p)) }
+                    }
+                    if (theme == ThemeMode.SYSTEM) {
+                        SettingRow(label = "Usar preto AMOLED no modo escuro", subtitle = "Quando o sistema estiver escuro", p = p, onClick = { onAmoledInDark(!amoledInDark) }) {
+                            Switch(
+                                checked = amoledInDark, onCheckedChange = null,
+                                colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = if (p.dark) Color(0xFF0B1026) else Color.White, uncheckedTrackColor = Color.Transparent, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted)
+                            )
+                        }
+                    }
+                    Text("Fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                    AppFont.entries.forEach { f ->
+                        SettingRow(label = f.label, p = p, onClick = { onFont(f) }, labelFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default, subtitle = "Aa Bb Cc 123 — Seus links", subtitleFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default) {
+                            RadioButton(selected = font == f, onClick = null, colors = radioColors(p))
+                        }
                     }
                     Text("Tamanho da fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
                     TextScale.entries.forEach { sc ->
@@ -384,6 +402,7 @@ private fun SectionHeader(text: String, p: Palette) {
 @Composable
 private fun SettingRow(
     label: String, p: Palette, subtitle: String? = null, onClick: (() -> Unit)? = null,
+    labelFamily: androidx.compose.ui.text.font.FontFamily? = null, subtitleFamily: androidx.compose.ui.text.font.FontFamily? = null,
     trailing: @Composable () -> Unit
 ) {
     Row(
@@ -392,8 +411,8 @@ private fun SettingRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-            Text(label, color = p.text, fontSize = 15.sp, maxLines = 2)
-            if (!subtitle.isNullOrBlank()) Text(subtitle, color = p.muted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(label, color = p.text, fontSize = 15.sp, maxLines = 2, fontFamily = labelFamily)
+            if (!subtitle.isNullOrBlank()) Text(subtitle, color = p.muted, fontSize = 12.sp, maxLines = 1, fontFamily = subtitleFamily, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(8.dp))
         trailing()

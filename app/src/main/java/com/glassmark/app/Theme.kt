@@ -1,6 +1,12 @@
 package com.glassmark.app
 
+import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -9,12 +15,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 enum class ThemeMode(val key: String, val label: String) {
+    SYSTEM("system", "Seguir o sistema"),
     LIGHT("light", "Claro"),
     DARK("dark", "Escuro"),
     AMOLED("amoled", "Escuro AMOLED");
 
     companion object {
-        fun fromKey(key: String?) = entries.firstOrNull { it.key == key } ?: DARK
+        fun fromKey(key: String?) = entries.firstOrNull { it.key == key } ?: SYSTEM
     }
 }
 
@@ -70,9 +77,25 @@ fun paletteFor(mode: ThemeMode): Palette = when (mode) {
 
 val LocalPalette = staticCompositionLocalOf { paletteFor(ThemeMode.DARK) }
 
+/** Resolve o tema efetivo: "Seguir o sistema" usa claro/escuro do aparelho (e AMOLED no escuro, se ativado). */
 @Composable
-fun GlassmarkTheme(mode: ThemeMode, content: @Composable () -> Unit) {
-    val p = paletteFor(mode)
+fun resolveTheme(mode: ThemeMode, amoledInDark: Boolean): ThemeMode {
+    if (mode != ThemeMode.SYSTEM) return mode
+    return if (isSystemInDarkTheme()) (if (amoledInDark) ThemeMode.AMOLED else ThemeMode.DARK) else ThemeMode.LIGHT
+}
+
+@Composable
+fun GlassmarkTheme(mode: ThemeMode, amoledInDark: Boolean, font: AppFont, content: @Composable () -> Unit) {
+    val p = paletteFor(resolveTheme(mode, amoledInDark))
+    val view = LocalView.current
+    SideEffect {
+        (view.context as? Activity)?.window?.let { w ->
+            WindowCompat.getInsetsController(w, view).apply {
+                isAppearanceLightStatusBars = !p.dark
+                isAppearanceLightNavigationBars = !p.dark
+            }
+        }
+    }
     val scheme = if (p.dark) darkColorScheme(
         background = p.canvas, surface = p.canvas, primary = p.accent, onPrimary = Color(0xFF0B1026),
         onBackground = p.text, onSurface = p.text
@@ -81,6 +104,6 @@ fun GlassmarkTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         onBackground = p.text, onSurface = p.text
     )
     CompositionLocalProvider(LocalPalette provides p) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, typography = Typography().withFont(font.family), content = content)
     }
 }

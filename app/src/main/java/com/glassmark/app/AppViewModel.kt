@@ -46,6 +46,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val customAvatarUri = MutableStateFlow(prefs.getString("custom_avatar_uri", null))
     // Aparência (persistida em SharedPreferences)
     val themeMode = MutableStateFlow(ThemeMode.fromKey(prefs.getString("theme_mode", null)))
+    val amoledInDark = MutableStateFlow(prefs.getBoolean("amoled_in_dark", false))
+    val appFont = MutableStateFlow(AppFont.fromKey(prefs.getString("app_font", null)))
     val textScale = MutableStateFlow(TextScale.fromKey(prefs.getString("text_scale", null)))
     val guest = MutableStateFlow(prefs.getBoolean("guest", false))
     val busy = MutableStateFlow(false)
@@ -101,6 +103,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setThemeMode(mode: ThemeMode) { themeMode.value = mode; prefs.edit().putString("theme_mode", mode.key).apply() }
+    fun setAmoledInDark(v: Boolean) { amoledInDark.value = v; prefs.edit().putBoolean("amoled_in_dark", v).apply() }
+    fun setAppFont(f: AppFont) { appFont.value = f; prefs.edit().putString("app_font", f.key).apply() }
     fun setTextScale(scale: TextScale) { textScale.value = scale; prefs.edit().putString("text_scale", scale.key).apply() }
     fun saveCustomAvatar(uri: String?) { customAvatarUri.value = uri; prefs.edit().putString("custom_avatar_uri", uri).apply() }
 
