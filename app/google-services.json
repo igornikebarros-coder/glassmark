@@ -12,7 +12,20 @@
           "package_name": "com.glassmark.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "988082779300-3sc90fbdsa1np7731atn0lbbhbtgfd67.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.glassmark.app",
+            "certificate_hash": "cc7c302888899b7ebc7f106c03d5f7a1e5e70595"
+          }
+        },
+        {
+          "client_id": "988082779300-67g8htrmgllbgn73l44vic0u2bk7kbkm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB79OKs1IYXdnCPnkpVKFbQQn0X6xnGm5Q"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "988082779300-67g8htrmgllbgn73l44vic0u2bk7kbkm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
