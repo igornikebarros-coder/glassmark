@@ -123,7 +123,13 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                         Text("Sua biblioteca", color = primaryText, fontSize = font(28), fontWeight = FontWeight.SemiBold)
                         Text("Links e ideias, em um só lugar", color = muted, fontSize = font(13))
                     }
-                    GlassTile(glass) {\n                        Box(Modifier.size(52.dp).clickable { showSettings = true }, contentAlignment = Alignment.Center) {\n                            val avatar = customAvatarUri ?: user?.photoUrl?.toString()\n                            if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = "Foto do perfil", modifier = Modifier.fillMaxSize().padding(4.dp).clip(CircleShape))\n                            else Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = if (user != null) accent else primaryText, modifier = Modifier.padding(14.dp))\n                        }\n                    }
+                    GlassTile(glass) {
+                        Box(Modifier.size(52.dp).clickable { showSettings = true }, contentAlignment = Alignment.Center) {
+                            val avatar = customAvatarUri ?: user?.photoUrl?.toString()
+                            if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = "Foto do perfil", modifier = Modifier.fillMaxSize().padding(4.dp).clip(CircleShape))
+                            else Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = if (user != null) accent else primaryText, modifier = Modifier.padding(14.dp))
+                        }
+                    }
                     Spacer(Modifier.width(8.dp))
                     GlassTile(glass) { Icon(Icons.Default.Settings, contentDescription = "Configurações", tint = primaryText, modifier = Modifier.clickable { showSettings = true }.padding(14.dp)) }
                 }
@@ -289,7 +295,9 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     TextScale.entries.forEach { option -> TextButton(onClick = { scale = option }) {
                         Text((if (scale == option) "✓ " else "") + option.label, color = primaryText, fontSize = (14 * option.multiplier).sp)
                     } }
-                    Text("Conta", color = primaryText, fontWeight = FontWeight.SemiBold)\n                    TextButton(onClick = { avatarPicker.launch(arrayOf("image/*")) }) { Text("Escolher foto de perfil") }\n                    if (customAvatarUri != null) TextButton(onClick = { vm.saveCustomAvatar(null) }) { Text("Usar foto do Google") }
+                    Text("Conta", color = primaryText, fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = { avatarPicker.launch(arrayOf("image/*")) }) { Text("Escolher foto de perfil") }
+                    if (customAvatarUri != null) TextButton(onClick = { vm.saveCustomAvatar(null) }) { Text("Usar foto do Google") }
                     val u = user
                     if (u != null) {
                         Text(u.displayName?.takeIf { it.isNotBlank() } ?: "Conta Glassmark", color = primaryText, fontSize = font(14))
