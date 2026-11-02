@@ -1,0 +1,53 @@
+name: Build Glassmark APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK (assinado com a chave debug)
+        run: gradle assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Glassmark.apk
+
+      - name: Upload APK (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Glassmark-debug-apk
+          path: Glassmark.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=v1.0
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" Glassmark.apk --clobber
+          else
+            gh release create "$TAG" Glassmark.apk --target "${GITHUB_SHA}" \
+              --title "Glassmark $TAG" \
+              --notes "APK de debug do Glassmark, gerado automaticamente pelo GitHub Actions."
+          fi
