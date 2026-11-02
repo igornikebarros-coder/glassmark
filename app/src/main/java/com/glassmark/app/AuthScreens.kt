@@ -40,7 +40,7 @@ fun AuthScreen(vm: AppViewModel) {
                 .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("GLASSMARK", color = Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Text("LINK", color = Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             Text(
                 when (mode) { AuthMode.LOGIN -> "Entrar"; AuthMode.REGISTER -> "Criar conta"; AuthMode.RESET -> "Recuperar senha" },
                 color = TextMain, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold
