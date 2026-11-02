@@ -49,7 +49,8 @@ def polygon(c, steps=24):
 
 # ---------- cores ----------
 BG_TOP, BG_BOT = (0x86, 0xC3, 0xFD), (0x44, 0x90, 0xFD)
-BODY_TOP, BODY_BOT = (0xFF, 0xFF, 0xFF), (0xCB, 0xE0, 0xFC)
+BODY_TOP, BODY_BOT = (0xFF, 0xFF, 0xFF), (0xF0, 0xF7, 0xFF)
+BODY_ALPHA_TOP, BODY_ALPHA_BOT = 0.90, 0.68
 
 # ---------- adaptive icon (camadas PNG: sem diferenças de renderização de vetor) ----------
 def write(path, text):
@@ -95,15 +96,21 @@ def render(size, shape, part="all"):
         img = vgrad(S, S, 18, 90, BG_TOP, BG_BOT, scale, off).convert("RGBA")
     if part == "bg":
         return img.resize((size, size), Image.LANCZOS)
+    # corpo (máscara) — a sombra só aparece FORA do marcador, porque o corpo é translúcido
+    m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(cmds())), fill=255)
     # sombra
     for dy, a in [(1.0, 0x30), (2.2, 0x22), (3.6, 0x14)]:
-        m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(cmds(0, dy))), fill=a)
-        img = Image.composite(Image.new("RGBA", (S, S), (0x1B, 0x56, 0xC8, 255)), img, m) if False else \
-            Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (0x1B, 0x56, 0xC8)).split(), m)))
-    # corpo
-    m = Image.new("L", (S, S), 0); ImageDraw.Draw(m).polygon(T(polygon(cmds())), fill=255)
+        sm = Image.new("L", (S, S), 0); ImageDraw.Draw(sm).polygon(T(polygon(cmds(0, dy))), fill=a)
+        sm = ImageChops.multiply(sm, ImageChops.invert(m))
+        img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (0x1B, 0x56, 0xC8)).split(), sm)))
+    # corpo: branco fosco semitransparente (o azul do fundo aparece por trás)
     body = vgrad(S, S, Y0, Y1, BODY_TOP, BODY_BOT, scale, off).convert("RGBA")
-    img = Image.composite(body, img, m)
+    ba = Image.new("L", (1, S))
+    for y in range(S):
+        t = min(max((y / scale + off - Y0) / (Y1 - Y0), 0), 1)
+        ba.putpixel((0, y), int(255 * (BODY_ALPHA_TOP + (BODY_ALPHA_BOT - BODY_ALPHA_TOP) * t)))
+    body.putalpha(ImageChops.multiply(m, ba.resize((S, S))))
+    img = Image.alpha_composite(img, body)
     # contorno claro
     edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(max(3, int(0.9*scale)//2*2+1))))
     img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (S, S), (255, 255, 255)).split(), edge.point(lambda v: int(v*0.85)))))
