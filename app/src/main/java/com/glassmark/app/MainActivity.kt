@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class GlassTheme { LIGHT, DARK }
+private enum class GlassTheme { LIGHT, DARK, AMOLED }
 private enum class TextScale(val multiplier: Float, val label: String) {
     SMALL(.88f, "Pequena"), DEFAULT(1f, "Padrão"), LARGE(1.15f, "Grande"), EXTRA_LARGE(1.3f, "Extra grande")
 }
@@ -96,13 +96,14 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val greeting = when (hour) { in 5..11 -> "Bom dia"; in 12..17 -> "Boa tarde"; else -> "Boa noite" }
     val firstName = user?.displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
-    val dark = theme == GlassTheme.DARK
-    val canvas = if (dark) Color(0xFF080A10) else Color(0xFFF4F6FA)
+    val dark = theme != GlassTheme.LIGHT
+    val amoled = theme == GlassTheme.AMOLED
+    val canvas = when (theme) { GlassTheme.LIGHT -> Color(0xFFF4F6FA); GlassTheme.DARK -> Color(0xFF080A10); GlassTheme.AMOLED -> Color.Black }
     val primaryText = if (dark) Color(0xFFF5F6FC) else Color(0xFF171A24)
     val muted = if (dark) Color(0xFF9DA7BC) else Color(0xFF737B8C)
     val glass = if (dark) Color(0x20FFFFFF) else Color(0xBFFFFFFF)
     // Dialog surfaces are deliberately more opaque for legibility in both themes.
-    val dialogSurface = if (dark) Color(0xF51B1D25) else Color(0xF5F7F8FC)
+    val dialogSurface = if (amoled) Color.Black else if (dark) Color(0xF51B1D25) else Color(0xF5F7F8FC)
     val accent = if (dark) Color(0xFFBFCBFF) else Color(0xFF5267B8)
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
     val collections = listOf("Todos", "Favoritos") + allCollections
@@ -114,7 +115,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     MaterialTheme(colorScheme = if (dark) darkColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)
         else lightColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)) {
         Box(Modifier.fillMaxSize().blur(if (showAdd || showSettings) 16.dp else 0.dp).background(Brush.verticalGradient(if (dark)
-            listOf(Color(0xFF20283B), canvas, Color(0xFF050609)) else listOf(Color(0xFFFFFFFF), Color(0xFFE8EDF7), canvas)))) {
+            if (amoled) listOf(Color.Black, Color.Black, Color.Black) else listOf(Color(0xFF20283B), canvas, Color(0xFF050609)) else listOf(Color(0xFFFFFFFF), Color(0xFFE8EDF7), canvas)))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -286,9 +287,10 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 title = { Text("Personalização", color = primaryText) },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text("Aparência", color = primaryText, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { theme = GlassTheme.LIGHT }) { Text("Modo claro") }
-                        TextButton(onClick = { theme = GlassTheme.DARK }) { Text("Modo escuro") }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { theme = GlassTheme.LIGHT }) { Text((if (theme == GlassTheme.LIGHT) "✓ " else "") + "Claro") }
+                        TextButton(onClick = { theme = GlassTheme.DARK }) { Text((if (theme == GlassTheme.DARK) "✓ " else "") + "Escuro") }
+                        TextButton(onClick = { theme = GlassTheme.AMOLED }) { Text((if (theme == GlassTheme.AMOLED) "✓ " else "") + "AMOLED") }
                     }
                     Text("Tamanho da fonte", color = primaryText, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     TextScale.entries.forEach { option -> TextButton(onClick = { scale = option }) {
