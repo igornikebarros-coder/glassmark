@@ -59,7 +59,7 @@ fun paletteFor(mode: ThemeMode): Palette = when (mode) {
         dialog = Color(0xFFF7F8FC), accent = Color(0xFF5267B8),
         divider = Color(0x1A171A24), stroke = Color(0x22171A24)
     )
-    ThemeMode.DARK -> Palette(
+    ThemeMode.DARK, ThemeMode.SYSTEM -> Palette(
         dark = true, canvas = Color(0xFF080A10),
         gradient = listOf(Color(0xFF20283B), Color(0xFF080A10), Color(0xFF050609)),
         text = Color(0xFFF5F6FC), muted = Color(0xFF9DA7BC), glass = Color(0x20FFFFFF),
