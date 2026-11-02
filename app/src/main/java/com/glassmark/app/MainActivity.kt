@@ -13,6 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.activity.viewModels
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +47,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handleShare(intent)
         setContent {
             val user by vm.user.collectAsState()
+    val customAvatarUri by vm.customAvatarUri.collectAsState()
             val guest by vm.guest.collectAsState()
             if (user == null && !guest) GlassmarkTheme { AuthScreen(vm) } else GlassmarkScreen(vm)
         }
@@ -80,6 +86,15 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var collectionFilter by remember { mutableStateOf("Todos") }
     var theme by remember { mutableStateOf(GlassTheme.DARK) }
     var scale by remember { mutableStateOf(TextScale.DEFAULT) }
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.saveCustomAvatar(uri.toString())
+        }
+    }
+    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    val greeting = when (hour) { in 5..11 -> "Bom dia"; in 12..17 -> "Boa tarde"; else -> "Boa noite" }
+    val firstName = user?.displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
     val context = LocalContext.current
     val dark = theme == GlassTheme.DARK
     val canvas = if (dark) Color(0xFF080A10) else Color(0xFFF4F6FA)
@@ -108,7 +123,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                         Text("Sua biblioteca", color = primaryText, fontSize = font(28), fontWeight = FontWeight.SemiBold)
                         Text("Links e ideias, em um só lugar", color = muted, fontSize = font(13))
                     }
-                    GlassTile(glass) { Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = if (user != null) accent else primaryText, modifier = Modifier.clickable { showSettings = true }.padding(14.dp)) }
+                    GlassTile(glass) {\n                        Box(Modifier.size(52.dp).clickable { showSettings = true }, contentAlignment = Alignment.Center) {\n                            val avatar = customAvatarUri ?: user?.photoUrl?.toString()\n                            if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = "Foto do perfil", modifier = Modifier.fillMaxSize().padding(4.dp).clip(CircleShape))\n                            else Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = if (user != null) accent else primaryText, modifier = Modifier.padding(14.dp))\n                        }\n                    }
                     Spacer(Modifier.width(8.dp))
                     GlassTile(glass) { Icon(Icons.Default.Settings, contentDescription = "Configurações", tint = primaryText, modifier = Modifier.clickable { showSettings = true }.padding(14.dp)) }
                 }
@@ -274,7 +289,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     TextScale.entries.forEach { option -> TextButton(onClick = { scale = option }) {
                         Text((if (scale == option) "✓ " else "") + option.label, color = primaryText, fontSize = (14 * option.multiplier).sp)
                     } }
-                    Text("Conta", color = primaryText, fontWeight = FontWeight.SemiBold)
+                    Text("Conta", color = primaryText, fontWeight = FontWeight.SemiBold)\n                    TextButton(onClick = { avatarPicker.launch(arrayOf("image/*")) }) { Text("Escolher foto de perfil") }\n                    if (customAvatarUri != null) TextButton(onClick = { vm.saveCustomAvatar(null) }) { Text("Usar foto do Google") }
                     val u = user
                     if (u != null) {
                         Text(u.displayName?.takeIf { it.isNotBlank() } ?: "Conta Glassmark", color = primaryText, fontSize = font(14))
