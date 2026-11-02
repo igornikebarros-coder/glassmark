@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val user by vm.user.collectAsState()
     val customAvatarUri by vm.customAvatarUri.collectAsState()
+    val customAvatarUri by vm.customAvatarUri.collectAsState()
             val guest by vm.guest.collectAsState()
             if (user == null && !guest) GlassmarkTheme { AuthScreen(vm) } else GlassmarkScreen(vm)
         }
@@ -86,6 +87,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var collectionFilter by remember { mutableStateOf("Todos") }
     var theme by remember { mutableStateOf(GlassTheme.DARK) }
     var scale by remember { mutableStateOf(TextScale.DEFAULT) }
+    val context = LocalContext.current
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -95,7 +97,6 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val greeting = when (hour) { in 5..11 -> "Bom dia"; in 12..17 -> "Boa tarde"; else -> "Boa noite" }
     val firstName = user?.displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
-    val context = LocalContext.current
     val dark = theme == GlassTheme.DARK
     val canvas = if (dark) Color(0xFF080A10) else Color(0xFFF4F6FA)
     val primaryText = if (dark) Color(0xFFF5F6FC) else Color(0xFF171A24)
