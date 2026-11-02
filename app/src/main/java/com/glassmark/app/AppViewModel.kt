@@ -43,6 +43,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val auth = FirebaseAuth.getInstance()
 
     val user = MutableStateFlow<FirebaseUser?>(auth.currentUser)
+    val customAvatarUri = MutableStateFlow(prefs.getString("custom_avatar_uri", null))
     val guest = MutableStateFlow(prefs.getBoolean("guest", false))
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)       // erro/aviso nas telas de login
@@ -95,6 +96,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         guest.value = v
         prefs.edit().putBoolean("guest", v).apply()
     }
+
+    fun saveCustomAvatar(uri: String?) { customAvatarUri.value = uri; prefs.edit().putString("custom_avatar_uri", uri).apply() }
 
     fun continueAsGuest() { message.value = null; setGuest(true) }
     fun goToLogin() { message.value = null; setGuest(false) }
