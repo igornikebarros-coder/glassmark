@@ -46,13 +46,13 @@ jobs:
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep -E "SHA-(1|256) digest"
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Glassmark.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Link.apk
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: Glassmark-debug-apk
-          path: Glassmark.apk
+          name: Link-debug-apk
+          path: Link.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -61,9 +61,9 @@ jobs:
         run: |
           TAG=v1.0
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" Glassmark.apk --clobber
+            gh release upload "$TAG" Link.apk --clobber
           else
-            gh release create "$TAG" Glassmark.apk --target "${GITHUB_SHA}" \
-              --title "Glassmark $TAG" \
-              --notes "APK do Glassmark (assinatura fixa), gerado automaticamente pelo GitHub Actions."
+            gh release create "$TAG" Link.apk --target "${GITHUB_SHA}" \
+              --title "Link $TAG" \
+              --notes "APK do Link (assinatura fixa), gerado automaticamente pelo GitHub Actions."
           fi
