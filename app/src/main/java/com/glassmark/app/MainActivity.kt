@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -77,6 +78,8 @@ private fun GlassmarkScreen(dao: LinkDao) {
     val primaryText = if (dark) Color(0xFFF5F6FC) else Color(0xFF171A24)
     val muted = if (dark) Color(0xFF9DA7BC) else Color(0xFF737B8C)
     val glass = if (dark) Color(0x20FFFFFF) else Color(0xBFFFFFFF)
+    // Dialog surfaces are deliberately more opaque for legibility in both themes.
+    val dialogSurface = if (dark) Color(0xF51B1D25) else Color(0xF5F7F8FC)
     val accent = if (dark) Color(0xFFBFCBFF) else Color(0xFF5267B8)
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
     val collections = listOf("Todos", "Inbox", "Favoritos") + links.map { it.collection }.distinct().filter { it !in listOf("Inbox") }
@@ -87,7 +90,7 @@ private fun GlassmarkScreen(dao: LinkDao) {
 
     MaterialTheme(colorScheme = if (dark) darkColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)
         else lightColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(if (dark)
+        Box(Modifier.fillMaxSize().blur(if (showAdd || showSettings) 16.dp else 0.dp).background(Brush.verticalGradient(if (dark)
             listOf(Color(0xFF20283B), canvas, Color(0xFF050609)) else listOf(Color(0xFFFFFFFF), Color(0xFFE8EDF7), canvas)))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(14.dp))
@@ -168,14 +171,14 @@ private fun GlassmarkScreen(dao: LinkDao) {
             }
         }
         if (showAdd) {
-            AlertDialog(onDismissRequest = { showAdd = false }, containerColor = glass,
+            AlertDialog(onDismissRequest = { showAdd = false }, containerColor = dialogSurface,
                 title = { Text("Salvar link", color = primaryText) },
-                text = { Column {
-                    OutlinedTextField(value = manualUrl, onValueChange = { manualUrl = it }, label = { Text("URL") }, placeholder = { Text("https://...") })
+                text = { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(value = manualUrl, onValueChange = { manualUrl = it }, label = { Text("URL") }, placeholder = { Text("https://...") }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = manualTitle, onValueChange = { manualTitle = it }, label = { Text("Título (opcional)") })
+                    OutlinedTextField(value = manualTitle, onValueChange = { manualTitle = it }, label = { Text("Título (opcional)") }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = collection, onValueChange = { collection = it }, label = { Text("Coleção") })
+                    OutlinedTextField(value = collection, onValueChange = { collection = it }, label = { Text("Coleção") }, modifier = Modifier.fillMaxWidth())
                 } },
                 confirmButton = { TextButton(onClick = {
                     val url = manualUrl.trim()
@@ -187,19 +190,19 @@ private fun GlassmarkScreen(dao: LinkDao) {
                 dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancelar") } })
         }
         if (showSettings) {
-            AlertDialog(onDismissRequest = { showSettings = false }, containerColor = glass,
+            AlertDialog(onDismissRequest = { showSettings = false }, containerColor = dialogSurface,
                 title = { Text("Personalização", color = primaryText) },
-                text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text("Aparência", color = primaryText, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { theme = GlassTheme.LIGHT }) { Text("Modo claro") }
                         TextButton(onClick = { theme = GlassTheme.DARK }) { Text("Modo escuro") }
                     }
-                    Text("Tamanho da fonte", color = primaryText, fontWeight = FontWeight.SemiBold)
+                    Text("Tamanho da fonte", color = primaryText, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     TextScale.entries.forEach { option -> TextButton(onClick = { scale = option }) {
                         Text((if (scale == option) "✓ " else "") + option.label, color = primaryText, fontSize = (14 * option.multiplier).sp)
                     } }
-                    Text("Login Google e sincronização em nuvem ainda requerem configuração de Firebase/OAuth.", color = muted, fontSize = font(12))
+                    Text("Login Google e sincronização em nuvem ainda requerem configuração de Firebase/OAuth.", color = muted, fontSize = font(12), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 } },
                 confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Fechar") } })
         }
