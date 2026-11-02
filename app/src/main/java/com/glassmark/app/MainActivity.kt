@@ -5,7 +5,11 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -48,7 +52,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val user by vm.user.collectAsState()
             val guest by vm.guest.collectAsState()
-            if (user == null && !guest) GlassmarkTheme { AuthScreen(vm) } else GlassmarkScreen(vm)
+            val mode by vm.themeMode.collectAsState()
+            GlassmarkTheme(mode) {
+                if (user == null && !guest) AuthScreen(vm) else GlassmarkScreen(vm)
+            }
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleShare(intent) }
@@ -59,11 +66,6 @@ class MainActivity : ComponentActivity() {
             if (!url.isNullOrBlank()) vm.addLink(url, intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty(), "Inbox")
         }
     }
-}
-
-private enum class GlassTheme { LIGHT, DARK, AMOLED }
-private enum class TextScale(val multiplier: Float, val label: String) {
-    SMALL(.88f, "Pequena"), DEFAULT(1f, "Padrão"), LARGE(1.15f, "Grande"), EXTRA_LARGE(1.3f, "Extra grande")
 }
 
 @Composable
@@ -84,8 +86,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var manualTitle by remember { mutableStateOf("") }
     var collection by remember { mutableStateOf("Inbox") }
     var collectionFilter by remember { mutableStateOf("Todos") }
-    var theme by remember { mutableStateOf(GlassTheme.DARK) }
-    var scale by remember { mutableStateOf(TextScale.DEFAULT) }
+    val theme by vm.themeMode.collectAsState()
+    val scale by vm.textScale.collectAsState()
     val context = LocalContext.current
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -96,15 +98,14 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val greeting = when (hour) { in 5..11 -> "Bom dia"; in 12..17 -> "Boa tarde"; else -> "Boa noite" }
     val firstName = user?.displayName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
-    val dark = theme != GlassTheme.LIGHT
-    val amoled = theme == GlassTheme.AMOLED
-    val canvas = when (theme) { GlassTheme.LIGHT -> Color(0xFFF4F6FA); GlassTheme.DARK -> Color(0xFF080A10); GlassTheme.AMOLED -> Color.Black }
-    val primaryText = if (dark) Color(0xFFF5F6FC) else Color(0xFF171A24)
-    val muted = if (dark) Color(0xFF9DA7BC) else Color(0xFF737B8C)
-    val glass = if (dark) Color(0x20FFFFFF) else Color(0xBFFFFFFF)
-    // Dialog surfaces are deliberately more opaque for legibility in both themes.
-    val dialogSurface = if (amoled) Color.Black else if (dark) Color(0xF51B1D25) else Color(0xF5F7F8FC)
-    val accent = if (dark) Color(0xFFBFCBFF) else Color(0xFF5267B8)
+    val p = LocalPalette.current
+    val canvas = p.canvas
+    val primaryText = p.text
+    val muted = p.muted
+    val glass = p.glass
+    // Diálogos usam superfícies opacas para manter a legibilidade em todos os temas.
+    val dialogSurface = p.dialog
+    val accent = p.accent
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
     val collections = listOf("Todos", "Favoritos") + allCollections
     val filtered = links.filter {
@@ -112,10 +113,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         (it.url.contains(search, true) || it.title.contains(search, true))
     }
 
-    MaterialTheme(colorScheme = if (dark) darkColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)
-        else lightColorScheme(background = canvas, surface = canvas, primary = accent, onSurface = primaryText)) {
-        Box(Modifier.fillMaxSize().blur(if (showAdd || showSettings) 16.dp else 0.dp).background(Brush.verticalGradient(if (dark)
-            if (amoled) listOf(Color.Black, Color.Black, Color.Black) else listOf(Color(0xFF20283B), canvas, Color(0xFF050609)) else listOf(Color(0xFFFFFFFF), Color(0xFFE8EDF7), canvas)))) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().blur(if (showAdd || showSettings) 16.dp else 0.dp).background(Brush.verticalGradient(p.gradient))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -283,33 +282,15 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 dismissButton = { TextButton(onClick = { vm.dismissUpload() }) { Text("Agora não") } })
         }
         if (showSettings) {
-            AlertDialog(onDismissRequest = { showSettings = false }, containerColor = dialogSurface,
-                title = { Text("Personalização", color = primaryText) },
-                text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("Aparência", color = primaryText, fontWeight = FontWeight.SemiBold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { theme = GlassTheme.LIGHT }) { Text((if (theme == GlassTheme.LIGHT) "✓ " else "") + "Claro") }
-                        TextButton(onClick = { theme = GlassTheme.DARK }) { Text((if (theme == GlassTheme.DARK) "✓ " else "") + "Escuro") }
-                        TextButton(onClick = { theme = GlassTheme.AMOLED }) { Text((if (theme == GlassTheme.AMOLED) "✓ " else "") + "AMOLED") }
-                    }
-                    Text("Tamanho da fonte", color = primaryText, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    TextScale.entries.forEach { option -> TextButton(onClick = { scale = option }) {
-                        Text((if (scale == option) "✓ " else "") + option.label, color = primaryText, fontSize = (14 * option.multiplier).sp)
-                    } }
-                    Text("Conta", color = primaryText, fontWeight = FontWeight.SemiBold)
-                    TextButton(onClick = { avatarPicker.launch(arrayOf("image/*")) }) { Text("Escolher foto de perfil") }
-                    if (customAvatarUri != null) TextButton(onClick = { vm.saveCustomAvatar(null) }) { Text("Usar foto do Google") }
-                    val u = user
-                    if (u != null) {
-                        Text(u.displayName?.takeIf { it.isNotBlank() } ?: "Conta Glassmark", color = primaryText, fontSize = font(14))
-                        Text(u.email.orEmpty(), color = muted, fontSize = font(12))
-                        TextButton(onClick = { showSettings = false; vm.logout() }) { Text("Sair da conta") }
-                    } else {
-                        Text("Modo visitante: links apenas neste aparelho.", color = muted, fontSize = font(12), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        TextButton(onClick = { showSettings = false; vm.goToLogin() }) { Text("Entrar ou criar conta") }
-                    }
-                } },
-                confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Fechar") } })
+            SettingsDialog(
+                p = p, theme = theme, scale = scale, user = user, hasCustomAvatar = customAvatarUri != null,
+                onTheme = vm::setThemeMode, onScale = vm::setTextScale,
+                onPickAvatar = { avatarPicker.launch(arrayOf("image/*")) },
+                onResetAvatar = { vm.saveCustomAvatar(null) },
+                onLogin = { showSettings = false; vm.goToLogin() },
+                onLogout = { showSettings = false; vm.logout() },
+                onClose = { showSettings = false }
+            )
         }
     }
 }
@@ -322,3 +303,96 @@ private fun GlassPanel(color: Color, shape: RoundedCornerShape, modifier: Modifi
 private fun GlassTile(color: Color, content: @Composable BoxScope.() -> Unit) {
     Surface(color = color, shape = RoundedCornerShape(18.dp), tonalElevation = 0.dp) { Box(content = content) }
 }
+
+// ---------- Configurações ----------
+
+@Composable
+private fun SettingsDialog(
+    p: Palette, theme: ThemeMode, scale: TextScale, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
+    onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit,
+    onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
+) {
+    Dialog(onDismissRequest = onClose) {
+        Surface(
+            color = p.dialog, shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, p.stroke), tonalElevation = 0.dp,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp)) {
+                Text(
+                    "Configurações", color = p.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                    SectionHeader("APARÊNCIA", p)
+                    Text("Tema", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+                    ThemeMode.entries.forEach { m ->
+                        SettingRow(label = m.label, p = p, onClick = { onTheme(m) }) { RadioButton(selected = theme == m, onClick = null, colors = radioColors(p)) }
+                    }
+                    Text("Tamanho da fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                    TextScale.entries.forEach { sc ->
+                        SettingRow(label = sc.label, p = p, onClick = { onScale(sc) }) { RadioButton(selected = scale == sc, onClick = null, colors = radioColors(p)) }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = p.divider)
+                    SectionHeader("CONTA", p)
+                    if (user != null) {
+                        SettingRow(
+                            label = user.displayName?.takeIf { it.isNotBlank() } ?: "Conta Link",
+                            subtitle = user.email, p = p
+                        ) {}
+                    } else {
+                        SettingRow(label = "Modo visitante", subtitle = "Links apenas neste aparelho", p = p) {
+                            TextButton(onClick = onLogin) { Text("Entrar") }
+                        }
+                    }
+                    SettingRow(label = "Foto de perfil", p = p) { TextButton(onClick = onPickAvatar) { Text("Escolher") } }
+                    if (hasCustomAvatar) {
+                        SettingRow(label = "Usar foto do Google", p = p) { TextButton(onClick = onResetAvatar) { Text("Restaurar") } }
+                    }
+                    if (user != null) {
+                        SettingRow(label = "Sair da conta", p = p) { TextButton(onClick = onLogout) { Text("Sair", color = p.error) } }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(color = p.divider)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onClose) { Text("Fechar") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String, p: Palette) {
+    Text(
+        text, color = p.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    )
+}
+
+/** Linha padrão: rótulo à esquerda, controle alinhado ao final, altura mínima uniforme. */
+@Composable
+private fun SettingRow(
+    label: String, p: Palette, subtitle: String? = null, onClick: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(label, color = p.text, fontSize = 15.sp, maxLines = 2)
+            if (!subtitle.isNullOrBlank()) Text(subtitle, color = p.muted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(8.dp))
+        trailing()
+    }
+}
+
+@Composable
+private fun radioColors(p: Palette) = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.muted)
