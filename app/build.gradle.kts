@@ -9,7 +9,7 @@ android {
     namespace = "com.glassmark.app"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.glassmark.app"
+        applicationId = "com.glassmark.link"
         minSdk = 26
         targetSdk = 35
         // No CI (GitHub Actions) a versão sobe a cada build: code = 100 + nº da execução, name = 1.6.<execução>.
