@@ -1,7 +1,5 @@
 <resources>
-    <string name="app_name">Glassmark</string>
-    <!-- Web client ID (OAuth tipo 3) usado no login com Google.
-         Preenchido automaticamente como default_web_client_id quando o google-services.json
-         contém um oauth_client do tipo 3. Se não, cole o ID aqui. -->
+    <string name="app_name">Link</string>
+    <!-- Web client ID (OAuth tipo 3) usado no login com Google. -->
     <string name="glassmark_web_client_id" translatable="false"></string>
 </resources>
