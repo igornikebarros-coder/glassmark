@@ -96,15 +96,9 @@ write(f"{RES}/drawable/ic_link_foreground.xml", f'''<vector xmlns:android="http:
 {grad(Y0 + 3.4, Y0 + 22, "#99FFFFFF", "#00FFFFFF")}    </path>
 </vector>
 ''')
-write(f"{RES}/drawable/ic_link_monochrome.xml", f'''<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#000000" android:pathData="{svg_path(cmds())}"/>
-</vector>
-''')
 adaptive = '''<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_link_background"/>
     <foreground android:drawable="@drawable/ic_link_foreground"/>
-    <monochrome android:drawable="@drawable/ic_link_monochrome"/>
 </adaptive-icon>
 '''
 write(f"{RES}/mipmap-anydpi-v26/ic_link.xml", adaptive)
