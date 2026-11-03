@@ -12,6 +12,8 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -72,13 +74,12 @@ fun onAccentOf(p: Palette) = if (p.dark) Color(0xFF0B1026) else Color.White
 
 @Composable
 fun Favicon(domain: String, size: Dp) {
-    val (a, b) = siteColors(domain)
     val letter: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(domain.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp)
         }
     }
-    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(Brush.linearGradient(listOf(a, b)))) {
+    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(Color(0xFF8A94A6).copy(alpha = .55f))) {
         SubcomposeAsyncImage(
             model = "https://www.google.com/s2/favicons?domain=$domain&sz=64", contentDescription = null, modifier = Modifier.fillMaxSize(),
             loading = { letter() }, error = { letter() },
@@ -92,13 +93,22 @@ fun GlassChip(
     label: String, count: Int?, selected: Boolean, p: Palette, fs: (Int) -> TextUnit, icon: ImageVector? = null,
     onClick: () -> Unit, onLongClick: (() -> Unit)? = null
 ) {
-    val src = remember { MutableInteractionSource() }
     val bg by animateColorAsState(if (selected) p.accent else p.glass, label = "chipBg")
     val fg by animateColorAsState(if (selected) onAccentOf(p) else p.text, label = "chipFg")
+    var pressed by remember { mutableStateOf(false) }
+    val sc by animateFloatAsState(if (pressed) 0.95f else 1f, spring(stiffness = 500f), label = "chipPress")
+    val click by rememberUpdatedState(onClick)
+    val long by rememberUpdatedState(onLongClick)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
-        Modifier.pressScale(src).clip(RoundedCornerShape(18.dp)).background(bg)
-            .then(if (selected) Modifier else Modifier.background(Color.Transparent))
-            .combinedClickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick, onLongClick = onLongClick)
+        Modifier.graphicsLayer { scaleX = sc; scaleY = sc }.clip(RoundedCornerShape(18.dp)).background(bg)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = { pressed = true; tryAwaitRelease(); pressed = false },
+                    onTap = { click() },
+                    onLongPress = { long?.let { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() } }
+                )
+            }
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -128,17 +138,19 @@ fun ClipBanner(url: String, p: Palette, fs: (Int) -> TextUnit, onSave: () -> Uni
 @Composable
 fun FavCard(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, onOpen: () -> Unit) {
     val d = domainOf(link.url)
-    val (a, b) = siteColors(d)
     val src = remember { MutableInteractionSource() }
-    Box(
-        Modifier.width(148.dp).height(98.dp).pressScale(src).clip(RoundedCornerShape(20.dp))
-            .background(Brush.linearGradient(listOf(a, b)))
-            .clickable(interactionSource = src, indication = LocalIndication.current, onClick = onOpen)
-    ) {
-        Box(Modifier.padding(10.dp)) { Favicon(d, 26.dp) }
-        Icon(Icons.Default.Favorite, null, tint = Color(0xFFFF729A), modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(16.dp))
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xB3000000)))).padding(10.dp, 16.dp, 10.dp, 8.dp)) {
-            Text(link.title.ifBlank { d }, color = Color.White, fontSize = fs(11), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = fs(13))
+    val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
+    GlassSurface(p, RoundedCornerShape(18.dp), Modifier.width(150.dp).pressScale(src).clip(RoundedCornerShape(18.dp))
+        .clickable(interactionSource = src, indication = LocalIndication.current, onClick = onOpen)) {
+        Column {
+            if (hasOg) Thumb(link, Modifier.fillMaxWidth().height(64.dp).padding(6.dp), corner = 12.dp)
+            Column(Modifier.padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Favicon(d, 18.dp); Spacer(Modifier.weight(1f))
+                    Icon(Icons.Default.Favorite, null, tint = Color(0xFFFF729A), modifier = Modifier.size(14.dp))
+                }
+                Text(link.title.ifBlank { d }, color = p.text, fontSize = fs(11), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+            }
         }
     }
 }
@@ -148,15 +160,11 @@ enum class CardSize(val key: String, val label: String) {
     companion object { fun fromKey(k: String?) = entries.firstOrNull { it.key == k } ?: MEDIUM }
 }
 
-/** Miniatura: imagem og:image (Coil) sobre um gradiente com o favicon, que serve de reserva. */
+/** Miniatura só quando existe imagem de prévia (og:image); fundo neutro, sem gradiente colorido. */
 @Composable
-fun Thumb(link: LinkEntity, modifier: Modifier, iconSize: Dp = 34.dp, corner: Dp = 16.dp) {
-    val d = domainOf(link.url)
-    val (a, b) = siteColors(d)
-    Box(modifier.clip(RoundedCornerShape(corner)).background(Brush.linearGradient(listOf(a, b))), contentAlignment = Alignment.Center) {
-        Favicon(d, iconSize)
-        if (link.ogImage.isNotBlank() && link.ogImage != "-")
-            AsyncImage(model = link.ogImage, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+fun Thumb(link: LinkEntity, modifier: Modifier, corner: Dp = 16.dp) {
+    Box(modifier.clip(RoundedCornerShape(corner)).background(Color(0xFF8A94A6).copy(alpha = .18f))) {
+        AsyncImage(model = link.ogImage, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 }
 
@@ -226,7 +234,8 @@ private fun LinkCard(
     val sc by animateFloatAsState(if (opening) 1.05f else 1f, spring(stiffness = 400f), label = "open")
     var menu by remember { mutableStateOf(false) }
     val d = domainOf(link.url)
-    val banner = grid || size == CardSize.LARGE
+    val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
+    val banner = hasOg && (grid || size == CardSize.LARGE)
     val moreMenu: @Composable () -> Unit = {
         Box {
             Icon(Icons.Default.MoreVert, "Mais opções", tint = p.muted, modifier = Modifier.clip(CircleShape).clickable { menu = true }.padding(6.dp))
@@ -245,17 +254,19 @@ private fun LinkCard(
     ) {
         Column {
             if (banner) {
-                val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 100.dp; CardSize.LARGE -> 140.dp } else 160.dp
-                Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp), iconSize = if (h < 90.dp) 26.dp else 40.dp, corner = 16.dp)
+                val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
+                Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
             }
             Row(Modifier.padding(start = 12.dp, top = if (banner) 2.dp else 12.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
-                if (!banner) {
-                    val s = if (size == CardSize.SMALL) 52.dp else 84.dp
-                    Thumb(link, Modifier.size(s), iconSize = if (size == CardSize.SMALL) 26.dp else 36.dp)
+                if (hasOg && !banner) {
+                    Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp))
                     Spacer(Modifier.width(12.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("$d · ${relTime(link.savedAt)}", color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Favicon(d, 16.dp)
+                        Text("$d · ${relTime(link.savedAt)}", color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+                    }
                     Text(link.title.ifBlank { d }, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
                     SummaryBlock(link, p, fs, summarizing, onSummarize)

@@ -4,6 +4,13 @@ package com.glassmark.app
 
 import android.content.Intent
 import android.content.Context
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -215,6 +222,27 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         delay(600)
         opening = null
     }
+    val pagerState = rememberPagerState { collections.size }
+    val chipsState = rememberLazyListState()
+    LaunchedEffect(collectionFilter, collections.size) {
+        val idx = collections.indexOf(collectionFilter)
+        if (idx >= 0) {
+            if (pagerState.currentPage != idx) pagerState.animateScrollToPage(idx)
+            runCatching { chipsState.animateScrollToItem(idx) }
+        }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { pg -> collections.getOrNull(pg)?.let { if (it != collectionFilter) collectionFilter = it } }
+    }
+    var barVisible by remember { mutableStateOf(true) }
+    val barConn = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y < -6f) barVisible = false else if (available.y > 6f) barVisible = true
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
     val builtIns = setOf("Todos", "Favoritos", "Inbox")
     val filteredFor: (String) -> List<LinkEntity> = { filter ->
         links.filter {
@@ -227,7 +255,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     Box(Modifier.fillMaxSize()) {
         val blurRadius by animateDpAsState(if (showAdd || showSettings || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
         Box(Modifier.fillMaxSize().blur(blurRadius).background(Brush.verticalGradient(p.gradient))) {
-            Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp).nestedScroll(barConn)) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -282,13 +310,13 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 }
                 Spacer(Modifier.height(12.dp))
                 if (collectionFilter != "Todos" && collectionFilter !in collections) collectionFilter = "Todos"
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                LazyRow(state = chipsState, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     items(collections, key = { it }) { item ->
                         val editable = item !in builtIns && item != "Ocultos"
                         val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
                         Box(Modifier.animateItem()) {
                             GlassChip(item, cnt, collectionFilter == item, p, font, icon = if (item == "Favoritos") Icons.Default.Favorite else null,
-                                onClick = { collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
+                                onClick = { if (collectionFilter == item && editable) chipMenu = item else collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
                             DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
                                 DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
                                     onClick = { chipMenu = null; renameText = item; renameTarget = item })
@@ -304,27 +332,21 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                AnimatedContent(
-                    targetState = collectionFilter, modifier = Modifier.weight(1f),
-                    transitionSpec = {
-                        val dir = if (collections.indexOf(targetState) >= collections.indexOf(initialState)) 1 else -1
-                        (fadeIn(tween(240)) + slideInHorizontally(tween(260)) { dir * it / 8 }) togetherWith (fadeOut(tween(120)) + slideOutHorizontally(tween(200)) { -dir * it / 10 })
-                    },
-                    label = "tab"
-                ) { filter ->
+                HorizontalPager(
+                    state = pagerState, modifier = Modifier.weight(1f), key = { collections.getOrNull(it) ?: it }, beyondViewportPageCount = 0
+                ) { page ->
+                    val filter = collections.getOrNull(page) ?: "Todos"
                     val shown = filteredFor(filter)
                     val favs = if (filter == "Todos" && search.isBlank()) links.filter { it.isFavorite } else emptyList()
                     if (shown.isEmpty()) {
-                        GlassSurface(p, RoundedCornerShape(26.dp), Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Bookmark, contentDescription = null, tint = muted, modifier = Modifier.size(34.dp))
-                                Spacer(Modifier.height(10.dp))
-                                Text(if (filter == "Todos") "Sua biblioteca está vazia" else "Nada por aqui ainda", color = primaryText, fontSize = font(16), fontWeight = FontWeight.Medium,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                                Spacer(Modifier.height(4.dp))
-                                Text("Compartilhe um link com o Link para salvá-lo.", color = muted, fontSize = font(13),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                            }
+                        Column(Modifier.fillMaxSize().padding(bottom = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Icon(if (filter == "Favoritos") Icons.Default.Favorite else Icons.Default.Bookmark, contentDescription = null, tint = muted.copy(alpha = .8f), modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text(when (filter) { "Todos" -> "Sua biblioteca está vazia"; "Favoritos" -> "Nenhum favorito ainda"; "Ocultos" -> "Nada oculto"; else -> "Nada por aqui ainda" },
+                                color = primaryText, fontSize = font(15), fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            Spacer(Modifier.height(4.dp))
+                            Text(when (filter) { "Todos" -> "Compartilhe um link com o Link ou toque em + para salvar."; "Favoritos" -> "Toque no ♥ de um link para fixá-lo aqui."; "Ocultos" -> "Links ocultados aparecem aqui."; else -> "Salve links nesta coleção com o botão +." },
+                                color = muted, fontSize = font(12), textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
                         }
                     } else {
                         LazyVerticalGrid(
@@ -377,15 +399,20 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 }
             }
             SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 92.dp, start = 16.dp, end = 16.dp))
-            GlassBar(
-                p, font, collectionFilter, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 14.dp),
+            AnimatedVisibility(
+                visible = barVisible, modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(tween(240)) { it } + fadeIn(tween(240)), exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
+            ) { GlassBar(
+                p, font, collectionFilter, Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 14.dp),
                 onHome = { collectionFilter = "Todos"; search = "" }, onFavs = { collectionFilter = "Favoritos" },
                 onSearch = { runCatching { searchFocus.requestFocus() } }, onSettings = { showSettings = true }
-            )
-            val fabScale = remember { MutableTransitionState(false).apply { targetState = true } }
+            ) }
+            val fabScale = remember { MutableTransitionState(false) }
+            LaunchedEffect(barVisible) { fabScale.targetState = barVisible }
             AnimatedVisibility(
                 visibleState = fabScale, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 36.dp),
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) + fadeIn()
+                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) + fadeIn(),
+                exit = scaleOut(tween(180)) + fadeOut(tween(160))
             ) {
                 val fabSrc = remember { MutableInteractionSource() }
                 val rot by animateFloatAsState(if (showAdd) 45f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "fab")
