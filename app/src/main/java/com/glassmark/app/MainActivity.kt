@@ -26,6 +26,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
@@ -229,7 +233,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     LaunchedEffect(collectionFilter, collections.size) {
         val idx = collections.indexOf(collectionFilter)
         if (idx >= 0) {
-            if (pagerState.currentPage != idx) pagerState.animateScrollToPage(idx)
+            if (pagerState.currentPage != idx) pagerState.animateScrollToPage(idx, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium))
             runCatching { chipsState.animateScrollToItem(idx) }
         }
     }
@@ -253,6 +257,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         }
     }
     val hiddenLinksCount = links.count { it.hidden }
+    val shownFilter = collections.getOrNull(pagerState.targetPage) ?: collectionFilter
     var showSearch by remember { mutableStateOf(false) }
     LaunchedEffect(showSearch) { if (showSearch) { delay(80); runCatching { searchFocus.requestFocus() } } }
     val pasteClip: () -> Unit = {
@@ -263,7 +268,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        val blurRadius by animateDpAsState(if (showAdd || showSettings || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
+        val blurRadius by animateDpAsState(if (showAdd || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
         Box(Modifier.fillMaxSize().blur(blurRadius).background(Brush.verticalGradient(p.gradient))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp).nestedScroll(barConn)) {
                 Spacer(Modifier.height(14.dp))
@@ -328,7 +333,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                             val editable = item !in builtIns && item != "Ocultos"
                             val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
                             Box(Modifier.animateItem()) {
-                                MinimalTab(item, cnt, collectionFilter == item, p, font,
+                                MinimalTab(item, cnt, shownFilter == item, p, font,
                                     onClick = { if (collectionFilter == item && editable) chipMenu = item else collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
                                 DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
                                     DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
@@ -350,7 +355,12 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 HorizontalDivider(color = p.divider)
                 Spacer(Modifier.height(4.dp))
                 HorizontalPager(
-                    state = pagerState, modifier = Modifier.weight(1f), key = { collections.getOrNull(it) ?: it }, beyondViewportPageCount = 0
+                    state = pagerState, modifier = Modifier.weight(1f), key = { collections.getOrNull(it) ?: it }, beyondViewportPageCount = 1,
+                    verticalAlignment = Alignment.Top,
+                    flingBehavior = PagerDefaults.flingBehavior(
+                        state = pagerState, snapPositionalThreshold = 0.2f,
+                        snapAnimationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                    )
                 ) { page ->
                     val filter = collections.getOrNull(page) ?: "Todos"
                     val shown = filteredFor(filter).sortedByDescending { it.savedAt }
@@ -398,6 +408,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     } else {
                         val groups = shown.groupBy { timelineGroup(it.savedAt) }
                         LazyVerticalGrid(
+                            modifier = Modifier.fillMaxSize(),
                             columns = GridCells.Fixed(if (gridView) 2 else 1), contentPadding = PaddingValues(bottom = 110.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -523,9 +534,15 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 confirmButton = { TextButton(onClick = { vm.uploadGuest() }) { Text("Enviar para a conta") } },
                 dismissButton = { TextButton(onClick = { vm.dismissUpload() }) { Text("Agora não") } })
         }
-        if (showSettings) {
-            SettingsDialog(
-                p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, gridView = gridView, cardSize = cardSize, hiddenCols = hiddenCols, hiddenLinksCount = hiddenLinksCount, user = user, hasCustomAvatar = customAvatarUri != null,
+        androidx.activity.compose.BackHandler(enabled = showSettings) { showSettings = false }
+        AnimatedVisibility(
+            visible = showSettings, modifier = Modifier.fillMaxSize(),
+            enter = slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(260)),
+            exit = slideOutHorizontally(tween(220)) { it / 3 } + fadeOut(tween(200))
+        ) {
+            SettingsScreen(
+                p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, gridView = gridView, cardSize = cardSize, hiddenCols = hiddenCols, hiddenLinksCount = hiddenLinksCount, user = user,
+                avatarUrl = customAvatarUri ?: user?.photoUrl?.toString(), hasCustomAvatar = customAvatarUri != null,
                 onTheme = vm::setThemeMode, onScale = vm::setTextScale, onAmoledInDark = vm::setAmoledInDark, onFont = vm::setAppFont, onGrid = vm::setGridView, onCardSize = vm::setCardSize, onUnhideCol = vm::unhideCollection,
                 onShowHiddenLinks = { showSettings = false; collectionFilter = "Ocultos" },
                 onPickAvatar = { avatarPicker.launch(arrayOf("image/*")) },
@@ -550,99 +567,111 @@ private fun GlassTile(color: Color, content: @Composable BoxScope.() -> Unit) {
 // ---------- Configurações ----------
 
 @Composable
-private fun SettingsDialog(
-    p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, gridView: Boolean, cardSize: CardSize, hiddenCols: Set<String>, hiddenLinksCount: Int, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
+private fun SettingsGroup(title: String, p: Palette, content: @Composable ColumnScope.() -> Unit) {
+    Text(title.uppercase(), color = p.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 6.dp, top = 24.dp, bottom = 8.dp))
+    GlassSurface(p, RoundedCornerShape(18.dp), Modifier.fillMaxWidth()) { Column(content = content) }
+}
+
+@Composable
+private fun SettingDivider(p: Palette) { HorizontalDivider(color = p.divider, modifier = Modifier.padding(start = 16.dp)) }
+
+@Composable
+private fun SettingsScreen(
+    p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, gridView: Boolean, cardSize: CardSize, hiddenCols: Set<String>, hiddenLinksCount: Int, user: com.google.firebase.auth.FirebaseUser?,
+    avatarUrl: String?, hasCustomAvatar: Boolean,
     onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit, onAmoledInDark: (Boolean) -> Unit, onFont: (AppFont) -> Unit, onGrid: (Boolean) -> Unit, onCardSize: (CardSize) -> Unit, onUnhideCol: (String) -> Unit, onShowHiddenLinks: () -> Unit,
     onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
 ) {
-    Dialog(onDismissRequest = onClose) {
-        PopIn {
-        Surface(
-            color = p.dialog, shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(1.dp, p.stroke), tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 640.dp)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp)) {
-                Text(
-                    "Configurações", color = p.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-                    SectionHeader("APARÊNCIA", p)
-                    Text("Tema", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
-                    ThemeMode.entries.forEach { m ->
-                        SettingRow(label = m.label, p = p, onClick = { onTheme(m) }) { RadioButton(selected = theme == m, onClick = null, colors = radioColors(p)) }
+    Column(Modifier.fillMaxSize().background(p.canvas).pointerInput(Unit) { detectTapGestures { } }.statusBarsPadding().navigationBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = p.text, modifier = Modifier.clip(CircleShape).clickable(onClick = onClose).padding(12.dp))
+            Text("Ajustes", color = p.text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 4.dp))
+        }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+            SettingsGroup("Conta", p) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(52.dp).clip(CircleShape).background(p.accent), contentAlignment = Alignment.Center) {
+                        val initial = (user?.displayName?.trim()?.firstOrNull() ?: user?.email?.firstOrNull())?.uppercase()
+                        if (!avatarUrl.isNullOrBlank()) AsyncImage(model = avatarUrl, contentDescription = "Foto do perfil", contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
+                        else if (initial != null) Text(initial, color = onAccentOf(p), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                        else Icon(Icons.Default.AccountCircle, null, tint = onAccentOf(p))
                     }
-                    if (theme == ThemeMode.SYSTEM) {
-                        SettingRow(label = "Usar preto AMOLED no modo escuro", subtitle = "Quando o sistema estiver escuro", p = p, onClick = { onAmoledInDark(!amoledInDark) }) {
-                            Switch(
-                                checked = amoledInDark, onCheckedChange = null,
-                                colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = if (p.dark) Color(0xFF0B1026) else Color.White, uncheckedTrackColor = Color.Transparent, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted)
-                            )
-                        }
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text(if (user != null) (user.displayName?.takeIf { it.isNotBlank() } ?: "Conta Link") else "Modo visitante", color = p.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(if (user != null) (user.email ?: "") else "Links apenas neste aparelho", color = p.muted, fontSize = 13.sp)
                     }
-                    Text("Fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
-                    AppFont.entries.forEach { f ->
-                        SettingRow(label = f.label, p = p, onClick = { onFont(f) }, labelFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default, subtitle = "Aa Bb Cc 123 — Seus links", subtitleFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default) {
-                            RadioButton(selected = font == f, onClick = null, colors = radioColors(p))
-                        }
-                    }
-                    Text("Visualização", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
-                    listOf(false to "Lista", true to "Grade (2 colunas)").forEach { (g, l) ->
-                        SettingRow(label = l, p = p, onClick = { onGrid(g) }) { RadioButton(selected = gridView == g, onClick = null, colors = radioColors(p)) }
-                    }
-                    Text("Tamanho dos cartões", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
-                    CardSize.entries.forEach { cs ->
-                        SettingRow(label = cs.label, p = p, onClick = { onCardSize(cs) }) { RadioButton(selected = cardSize == cs, onClick = null, colors = radioColors(p)) }
-                    }
-                    Text("Tamanho da fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
-                    TextScale.entries.forEach { sc ->
-                        SettingRow(label = sc.label, p = p, onClick = { onScale(sc) }) { RadioButton(selected = scale == sc, onClick = null, colors = radioColors(p)) }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-                    HorizontalDivider(color = p.divider)
-                    SectionHeader("OCULTOS", p)
-                    SettingRow(label = "Links ocultos", subtitle = "$hiddenLinksCount ${if (hiddenLinksCount == 1) "link" else "links"}", p = p) {
-                        TextButton(enabled = hiddenLinksCount > 0, onClick = onShowHiddenLinks) { Text("Ver") }
-                    }
-                    if (hiddenCols.isEmpty()) SettingRow(label = "Abas ocultas", subtitle = "Nenhuma", p = p) {}
-                    hiddenCols.sorted().forEach { c -> SettingRow(label = c, subtitle = "Aba oculta", p = p) { TextButton(onClick = { onUnhideCol(c) }) { Text("Mostrar") } } }
-                    Spacer(Modifier.height(8.dp))
-                    HorizontalDivider(color = p.divider)
-                    SectionHeader("CONTA", p)
-                    if (user != null) {
-                        SettingRow(
-                            label = user.displayName?.takeIf { it.isNotBlank() } ?: "Conta Link",
-                            subtitle = user.email, p = p
-                        ) {}
-                    } else {
-                        SettingRow(label = "Modo visitante", subtitle = "Links apenas neste aparelho", p = p) {
-                            TextButton(onClick = onLogin) { Text("Entrar") }
-                        }
-                    }
-                    SettingRow(label = "Foto de perfil", p = p) { TextButton(onClick = onPickAvatar) { Text("Escolher") } }
-                    if (hasCustomAvatar) {
-                        SettingRow(label = "Usar foto do Google", p = p) { TextButton(onClick = onResetAvatar) { Text("Restaurar") } }
-                    }
-                    if (user != null) {
-                        SettingRow(label = "Sair da conta", p = p) { TextButton(onClick = onLogout) { Text("Sair", color = p.error) } }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    HorizontalDivider(color = p.divider)
-                    SectionHeader("SOBRE", p)
-                    val ctx = androidx.compose.ui.platform.LocalContext.current
-                    val versionName = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
-                    SettingRow(label = "Versão do app", p = p) { Text(versionName, color = p.muted, fontSize = 14.sp) }
                 }
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider(color = p.divider)
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onClose) { Text("Fechar") }
+                SettingDivider(p)
+                SettingRow(label = "Foto de perfil", p = p, onClick = onPickAvatar) { Text("Escolher", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                if (hasCustomAvatar) {
+                    SettingDivider(p)
+                    SettingRow(label = "Usar foto do Google", p = p, onClick = onResetAvatar) { Text("Restaurar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                }
+                SettingDivider(p)
+                if (user != null) SettingRow(label = "Sair da conta", p = p, onClick = onLogout) { Text("Sair", color = p.error, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                else SettingRow(label = "Entrar ou criar conta", subtitle = "Sincronize seus links na nuvem", p = p, onClick = onLogin) { Text("Entrar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+            }
+
+            SettingsGroup("Aparência · Tema", p) {
+                ThemeMode.entries.forEachIndexed { i, m ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = m.label, p = p, onClick = { onTheme(m) }) { RadioButton(selected = theme == m, onClick = null, colors = radioColors(p)) }
+                }
+                if (theme == ThemeMode.SYSTEM) {
+                    SettingDivider(p)
+                    SettingRow(label = "Usar preto AMOLED no escuro", subtitle = "Quando o sistema estiver escuro", p = p, onClick = { onAmoledInDark(!amoledInDark) }) {
+                        Switch(
+                            checked = amoledInDark, onCheckedChange = null,
+                            colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = onAccentOf(p), uncheckedTrackColor = Color.Transparent, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted)
+                        )
+                    }
                 }
             }
-        }
+            SettingsGroup("Aparência · Fonte", p) {
+                AppFont.entries.forEachIndexed { i, f ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = f.label, p = p, onClick = { onFont(f) }, labelFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default, subtitle = "Aa Bb Cc 123 — Seus links", subtitleFamily = f.family ?: androidx.compose.ui.text.font.FontFamily.Default) {
+                        RadioButton(selected = font == f, onClick = null, colors = radioColors(p))
+                    }
+                }
+            }
+            SettingsGroup("Aparência · Tamanho do texto", p) {
+                TextScale.entries.forEachIndexed { i, sc ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = sc.label, p = p, onClick = { onScale(sc) }) { RadioButton(selected = scale == sc, onClick = null, colors = radioColors(p)) }
+                }
+            }
+
+            SettingsGroup("Visualização", p) {
+                listOf(false to "Lista", true to "Grade (2 colunas)").forEachIndexed { i, (g, l) ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = l, p = p, onClick = { onGrid(g) }) { RadioButton(selected = gridView == g, onClick = null, colors = radioColors(p)) }
+                }
+            }
+            SettingsGroup("Tamanho dos cards", p) {
+                CardSize.entries.forEachIndexed { i, cs ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = cs.label, p = p, onClick = { onCardSize(cs) }) { RadioButton(selected = cardSize == cs, onClick = null, colors = radioColors(p)) }
+                }
+            }
+
+            SettingsGroup("Ocultos", p) {
+                SettingRow(label = "Links ocultos", subtitle = "$hiddenLinksCount ${if (hiddenLinksCount == 1) "link" else "links"}", p = p, onClick = if (hiddenLinksCount > 0) onShowHiddenLinks else null) {
+                    Text("Ver", color = if (hiddenLinksCount > 0) p.accent else p.muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                SettingDivider(p)
+                if (hiddenCols.isEmpty()) SettingRow(label = "Abas ocultas", subtitle = "Nenhuma", p = p) {}
+                hiddenCols.sorted().forEachIndexed { i, c ->
+                    if (i > 0) SettingDivider(p)
+                    SettingRow(label = c, subtitle = "Aba oculta", p = p, onClick = { onUnhideCol(c) }) { Text("Mostrar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+
+            SettingsGroup("Sobre", p) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val versionName = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
+                SettingRow(label = "Versão do app", p = p) { Text(versionName, color = p.muted, fontSize = 14.sp) }
+            }
         }
     }
 }
@@ -663,8 +692,8 @@ private fun SettingRow(
     trailing: @Composable () -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {

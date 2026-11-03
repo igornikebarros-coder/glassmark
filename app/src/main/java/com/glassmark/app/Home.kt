@@ -197,8 +197,8 @@ fun MinimalTab(
     label: String, count: Int?, selected: Boolean, p: Palette, fs: (Int) -> TextUnit, icon: ImageVector? = null,
     onClick: () -> Unit, onLongClick: (() -> Unit)? = null
 ) {
-    val fg by animateColorAsState(if (selected) p.text else p.muted, label = "tabFg")
-    val line by animateColorAsState(if (selected) p.accent else Color.Transparent, label = "tabLine")
+    val fg by animateColorAsState(if (selected) p.text else p.muted, androidx.compose.animation.core.tween(110), label = "tabFg")
+    val line by animateColorAsState(if (selected) p.accent else Color.Transparent, androidx.compose.animation.core.tween(110), label = "tabLine")
     val click by rememberUpdatedState(onClick)
     val long by rememberUpdatedState(onLongClick)
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -220,24 +220,17 @@ fun MinimalTab(
 }
 
 @Composable
-private fun SummaryBlock(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, busy: Boolean, onSummarize: () -> Unit) {
+private fun SummaryBlock(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, busy: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     if (link.summary.isNotBlank()) {
-        Row(
-            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }.animateContentSize()
-        ) {
-            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(13.dp).padding(top = 2.dp))
-            Text(link.summary, color = p.text.copy(alpha = .78f), fontSize = fs(12), lineHeight = fs(17), maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
-        }
+        Text(
+            link.summary, color = p.text.copy(alpha = .78f), fontSize = fs(12), lineHeight = fs(17), maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { expanded = !expanded }.animateContentSize()
+        )
     } else if (busy) {
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = p.accent)
             Text("Resumindo…", color = p.muted, fontSize = fs(11), modifier = Modifier.padding(start = 8.dp))
-        }
-    } else {
-        Row(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onSummarize).padding(vertical = 4.dp, horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(13.dp))
-            Text("Resumir com IA", color = p.accent, fontSize = fs(11), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
         }
     }
 }
@@ -288,6 +281,7 @@ private fun LinkCard(
     val src = remember { MutableInteractionSource() }
     val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
     var menu by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val d = domainOf(link.url)
     val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
     val banner = hasOg && (grid || size == CardSize.LARGE)
@@ -295,54 +289,42 @@ private fun LinkCard(
     val shape = RoundedCornerShape(18.dp)
     val title = link.title.ifBlank { d }
     val meta = "$d · ${relTime(link.savedAt)}"
-    val moreMenu: @Composable () -> Unit = {
-        Box {
-            Icon(Icons.Default.MoreVert, "Mais opções", tint = p.muted, modifier = Modifier.clip(CircleShape).clickable { menu = true }.padding(6.dp))
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = p.dialog) {
-                if (link.summary.isBlank()) DropdownMenuItem(text = { Text("Resumir com IA", color = p.text) }, leadingIcon = { Icon(Icons.Default.AutoAwesome, null, tint = p.accent) }, onClick = { menu = false; onSummarize() })
-                DropdownMenuItem(text = { Text("Editar", color = p.text) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = p.muted) }, onClick = { menu = false; onEdit() })
-                DropdownMenuItem(text = { Text(if (hiddenMode) "Mostrar" else "Ocultar", color = p.text) }, leadingIcon = { Icon(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = p.muted) }, onClick = { menu = false; onHide() })
-                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) }, onClick = { menu = false; onDelete() })
-            }
-        }
-    }
+    val pink = Color(0xFFFF729A)
     GlassSurface(
         p, shape,
         Modifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
-            .clickable(interactionSource = src, indication = LocalIndication.current, onClick = onOpen)
+            .combinedClickable(
+                interactionSource = src, indication = LocalIndication.current, onClick = onOpen,
+                onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true }
+            )
     ) {
         Column {
+            Box {
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = p.dialog) {
+                    DropdownMenuItem(text = { Text(if (link.isFavorite) "Remover dos favoritos" else "Favoritar", color = p.text) }, onClick = { menu = false; onToggleFav() })
+                    if (link.summary.isBlank()) DropdownMenuItem(text = { Text("Resumir com IA", color = p.text) }, onClick = { menu = false; onSummarize() })
+                    DropdownMenuItem(text = { Text("Editar", color = p.text) }, onClick = { menu = false; onEdit() })
+                    DropdownMenuItem(text = { Text(if (hiddenMode) "Mostrar" else "Ocultar", color = p.text) }, onClick = { menu = false; onHide() })
+                    DropdownMenuItem(text = { Text("Apagar", color = p.error) }, onClick = { menu = false; onDelete() })
+                }
+            }
             if (banner) {
                 val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
                 Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
             }
-            if (grid) {
-                Column(Modifier.padding(start = 12.dp, end = 4.dp, top = if (banner) 0.dp else 12.dp, bottom = 4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Favicon(d, 14.dp)
-                        Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp, end = 8.dp))
-                    }
-                    Text(title, color = p.text, fontSize = fs(13), fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp, end = 8.dp))
-                    if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
-                    Box(Modifier.padding(end = 8.dp)) { SummaryBlock(link, p, fs, summarizing, onSummarize) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu()
-                    }
-                }
-            } else {
-                Row(Modifier.padding(start = 12.dp, top = if (banner) 2.dp else 12.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
-                    if (sideThumb) Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp)) else Box(Modifier.padding(top = 2.dp)) { Favicon(d, 30.dp) }
+            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = if (banner) 4.dp else 14.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
+                if (sideThumb) {
+                    Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp))
                     Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(title, color = p.text, fontSize = fs(15), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (sideThumb) { Favicon(d, 14.dp); Spacer(Modifier.width(6.dp)) }
-                            Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
-                        SummaryBlock(link, p, fs, summarizing, onSummarize)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.Bold, maxLines = if (grid) 3 else 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (link.isFavorite) Text(" · Favorito", color = pink, fontSize = fs(11), maxLines = 1)
                     }
-                    AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu()
+                    if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+                    SummaryBlock(link, p, fs, summarizing)
                 }
             }
         }
