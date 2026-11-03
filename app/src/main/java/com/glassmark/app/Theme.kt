@@ -54,24 +54,24 @@ data class Palette(
 fun paletteFor(mode: ThemeMode): Palette = when (mode) {
     ThemeMode.LIGHT -> Palette(
         dark = false, canvas = Color(0xFFF4F6FA),
-        gradient = listOf(Color(0xFFFFFFFF), Color(0xFFE8EDF7), Color(0xFFF4F6FA)),
-        text = Color(0xFF171A24), muted = Color(0xFF737B8C), glass = Color(0xBFFFFFFF),
+        gradient = listOf(Color(0xFFFFFFFF), Color(0xFFF6F7FA), Color(0xFFF6F7FA)),
+        text = Color(0xFF171A24), muted = Color(0xFF737B8C), glass = Color(0xFFFFFFFF),
         dialog = Color(0xFFF7F8FC), accent = Color(0xFF5267B8),
-        divider = Color(0x1A171A24), stroke = Color(0x22171A24)
+        divider = Color(0x1A171A24), stroke = Color(0x1F171A24)
     )
     ThemeMode.DARK, ThemeMode.SYSTEM -> Palette(
-        dark = true, canvas = Color(0xFF080A10),
-        gradient = listOf(Color(0xFF20283B), Color(0xFF080A10), Color(0xFF050609)),
-        text = Color(0xFFF5F6FC), muted = Color(0xFF9DA7BC), glass = Color(0x20FFFFFF),
+        dark = true, canvas = Color(0xFF0B0D12),
+        gradient = listOf(Color(0xFF131B2E), Color(0xFF0B0D12), Color(0xFF0B0D12)),
+        text = Color(0xFFF5F6FC), muted = Color(0xFF9DA7BC), glass = Color(0xFF161A22),
         dialog = Color(0xFF1B1D25), accent = Color(0xFFBFCBFF),
-        divider = Color(0x22FFFFFF), stroke = Color(0x33FFFFFF)
+        divider = Color(0x1FFFFFFF), stroke = Color(0x1AFFFFFF)
     )
     ThemeMode.AMOLED -> Palette(
         dark = true, canvas = Color(0xFF000000),
-        gradient = listOf(Color(0xFF000000), Color(0xFF000000), Color(0xFF000000)),
-        text = Color(0xFFF5F6FC), muted = Color(0xFF9AA2B3), glass = Color(0x1AFFFFFF),
+        gradient = listOf(Color(0xFF060B1A), Color(0xFF000000), Color(0xFF000000)),
+        text = Color(0xFFF5F6FC), muted = Color(0xFF9AA2B3), glass = Color(0xFF0D0E12),
         dialog = Color(0xFF000000), accent = Color(0xFFBFCBFF),
-        divider = Color(0x29FFFFFF), stroke = Color(0x40FFFFFF)
+        divider = Color(0x24FFFFFF), stroke = Color(0x24FFFFFF)
     )
 }
 

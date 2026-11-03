@@ -24,6 +24,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.foundation.border
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
@@ -251,6 +253,14 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         }
     }
     val hiddenLinksCount = links.count { it.hidden }
+    var showSearch by remember { mutableStateOf(false) }
+    LaunchedEffect(showSearch) { if (showSearch) { delay(80); runCatching { searchFocus.requestFocus() } } }
+    val pasteClip: () -> Unit = {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val t = runCatching { cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim() }.getOrNull()
+        if (t != null && Regex("^https?://\\S+$").matches(t)) vm.addLink(t, "", if (collectionFilter in allCollections) collectionFilter else "Inbox")
+        else uiScope.launch { snack.currentSnackbarData?.dismiss(); snack.showSnackbar("Copie um link (https://…) primeiro") }
+    }
 
     Box(Modifier.fillMaxSize()) {
         val blurRadius by animateDpAsState(if (showAdd || showSettings || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
@@ -259,18 +269,19 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("$greeting${firstName?.let { ", $it" } ?: ""} 👋", color = muted, fontSize = font(13), fontWeight = FontWeight.SemiBold)
-                        Text("O que vamos guardar hoje?", color = primaryText, fontSize = font(22), fontWeight = FontWeight.ExtraBold)
+                        Text("$greeting,", color = muted, fontSize = font(15), fontWeight = FontWeight.Medium)
+                        Text(firstName ?: (if (user == null) "Visitante" else "Link"), color = primaryText, fontSize = font(32), fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                    GlassTile(glass) {
-                        Box(Modifier.size(52.dp).clickable { showSettings = true }, contentAlignment = Alignment.Center) {
-                            val avatar = customAvatarUri ?: user?.photoUrl?.toString()
-                            if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = "Foto do perfil", modifier = Modifier.fillMaxSize().padding(4.dp).clip(CircleShape))
-                            else Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = if (user != null) accent else primaryText, modifier = Modifier.padding(14.dp))
-                        }
+                    Box(Modifier.size(42.dp).clip(CircleShape).border(1.dp, p.stroke, CircleShape).clickable { showSearch = !showSearch; if (!showSearch) search = "" }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Search, contentDescription = "Buscar", tint = primaryText, modifier = Modifier.size(20.dp))
                     }
-                    Spacer(Modifier.width(8.dp))
-                    GlassTile(glass) { Icon(Icons.Default.Settings, contentDescription = "Configurações", tint = primaryText, modifier = Modifier.clickable { showSettings = true }.padding(14.dp)) }
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.size(42.dp).clip(CircleShape).background(accent).clickable { showSettings = true }, contentAlignment = Alignment.Center) {
+                        val avatar = customAvatarUri ?: user?.photoUrl?.toString()
+                        if (!avatar.isNullOrBlank()) AsyncImage(model = avatar, contentDescription = "Foto do perfil", contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
+                        else if (firstName != null) Text(firstName.first().uppercase(), color = onAccentOf(p), fontWeight = FontWeight.ExtraBold, fontSize = font(16))
+                        else Icon(Icons.Default.AccountCircle, contentDescription = "Conta", tint = onAccentOf(p))
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 if (user == null) {
@@ -291,16 +302,17 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     }
                     Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(4.dp))
-                GlassSurface(p, RoundedCornerShape(26.dp), Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Search, contentDescription = "Buscar", tint = muted)
-                        TextField(value = search, onValueChange = { search = it }, placeholder = { Text("Buscar links, sites, coleções…", color = muted, fontSize = font(14)) },
-                            modifier = Modifier.weight(1f).focusRequester(searchFocus), colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                                focusedTextColor = primaryText, unfocusedTextColor = primaryText), singleLine = true)
-                        if (search.isNotEmpty()) Icon(Icons.Default.Close, contentDescription = "Limpar", tint = muted, modifier = Modifier.clip(CircleShape).clickable { search = "" }.padding(6.dp))
+                if (showSearch || search.isNotEmpty()) {
+                    GlassSurface(p, RoundedCornerShape(22.dp), Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = muted)
+                            TextField(value = search, onValueChange = { search = it }, placeholder = { Text("Buscar links, sites, coleções…", color = muted, fontSize = font(14)) },
+                                modifier = Modifier.weight(1f).focusRequester(searchFocus), colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = primaryText, unfocusedTextColor = primaryText), singleLine = true)
+                            Icon(Icons.Default.Close, contentDescription = "Fechar busca", tint = muted, modifier = Modifier.clip(CircleShape).clickable { search = ""; showSearch = false }.padding(6.dp))
+                        }
                     }
                 }
                 AnimatedVisibility(visible = clipUrl != null && links.none { it.url == clipUrl }) {
@@ -308,120 +320,112 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                         vm.addLink(clipUrl.orEmpty(), "", if (collectionFilter in allCollections) collectionFilter else "Inbox"); clipDismissed = clipUrl; clipUrl = null
                     }, onDismiss = { clipDismissed = clipUrl; clipUrl = null })
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 if (collectionFilter != "Todos" && collectionFilter !in collections) collectionFilter = "Todos"
-                LazyRow(state = chipsState, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    items(collections, key = { it }) { item ->
-                        val editable = item !in builtIns && item != "Ocultos"
-                        val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
-                        Box(Modifier.animateItem()) {
-                            GlassChip(item, cnt, collectionFilter == item, p, font, icon = if (item == "Favoritos") Icons.Default.Favorite else null,
-                                onClick = { if (collectionFilter == item && editable) chipMenu = item else collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
-                            DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
-                                DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
-                                    onClick = { chipMenu = null; renameText = item; renameTarget = item })
-                                DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
-                                    onClick = { chipMenu = null; vm.hideCollection(item); if (collectionFilter == item) collectionFilter = "Todos" })
-                                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
-                                    onClick = { chipMenu = null; deleteTarget = item })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LazyRow(state = chipsState, horizontalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.weight(1f)) {
+                        items(collections, key = { it }) { item ->
+                            val editable = item !in builtIns && item != "Ocultos"
+                            val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
+                            Box(Modifier.animateItem()) {
+                                MinimalTab(item, cnt, collectionFilter == item, p, font,
+                                    onClick = { if (collectionFilter == item && editable) chipMenu = item else collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
+                                DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
+                                    DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
+                                        onClick = { chipMenu = null; renameText = item; renameTarget = item })
+                                    DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
+                                        onClick = { chipMenu = null; vm.hideCollection(item); if (collectionFilter == item) collectionFilter = "Todos" })
+                                    DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
+                                        onClick = { chipMenu = null; deleteTarget = item })
+                                }
                             }
                         }
+                        item(key = "__new") {
+                            Box(Modifier.animateItem()) { MinimalTab("Nova", null, false, p, font, icon = Icons.Default.Add, onClick = { showNewCollection = true }) }
+                        }
                     }
-                    item(key = "__new") {
-                        Box(Modifier.animateItem()) { GlassChip("Nova", null, false, p, font, icon = Icons.Default.Add, onClick = { showNewCollection = true }) }
-                    }
+                    Icon(if (gridView) Icons.Default.ViewAgenda else Icons.Default.GridView, contentDescription = "Alternar lista e grade", tint = muted,
+                        modifier = Modifier.padding(start = 6.dp).clip(CircleShape).clickable { vm.setGridView(!gridView) }.padding(8.dp).size(20.dp))
                 }
-                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = p.divider)
+                Spacer(Modifier.height(4.dp))
                 HorizontalPager(
                     state = pagerState, modifier = Modifier.weight(1f), key = { collections.getOrNull(it) ?: it }, beyondViewportPageCount = 0
                 ) { page ->
                     val filter = collections.getOrNull(page) ?: "Todos"
-                    val shown = filteredFor(filter)
-                    val favs = if (filter == "Todos" && search.isBlank()) links.filter { it.isFavorite } else emptyList()
+                    val shown = filteredFor(filter).sortedByDescending { it.savedAt }
                     if (shown.isEmpty()) {
-                        Column(Modifier.fillMaxSize().padding(bottom = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Icon(if (filter == "Favoritos") Icons.Default.Favorite else Icons.Default.Bookmark, contentDescription = null, tint = muted.copy(alpha = .8f), modifier = Modifier.size(32.dp))
-                            Spacer(Modifier.height(10.dp))
-                            Text(when (filter) { "Todos" -> "Sua biblioteca está vazia"; "Favoritos" -> "Nenhum favorito ainda"; "Ocultos" -> "Nada oculto"; else -> "Nada por aqui ainda" },
-                                color = primaryText, fontSize = font(15), fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            Spacer(Modifier.height(4.dp))
-                            Text(when (filter) { "Todos" -> "Compartilhe um link com o Link ou toque em + para salvar."; "Favoritos" -> "Toque no ♥ de um link para fixá-lo aqui."; "Ocultos" -> "Links ocultados aparecem aqui."; else -> "Salve links nesta coleção com o botão +." },
-                                color = muted, fontSize = font(12), textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+                        if (filter == "Todos" && search.isBlank()) {
+                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 20.dp, bottom = 110.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(72.dp).clip(RoundedCornerShape(22.dp)).background(accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = accent, modifier = Modifier.size(34.dp))
+                                }
+                                Spacer(Modifier.height(18.dp))
+                                Text("Sua biblioteca está vazia", color = primaryText, fontSize = font(20), fontWeight = FontWeight.ExtraBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(4.dp))
+                                Text("Salve seu primeiro link em 3 passos", color = muted, fontSize = font(13), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(18.dp))
+                                listOf("Abra qualquer site ou app", "Toque em Compartilhar", "Escolha \u201cLink\u201d").forEachIndexed { i, s ->
+                                    GlassSurface(p, RoundedCornerShape(14.dp), Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.size(24.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+                                                Text("${i + 1}", color = onAccentOf(p), fontSize = font(12), fontWeight = FontWeight.ExtraBold)
+                                            }
+                                            Text(s, color = primaryText, fontSize = font(14), fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 12.dp))
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(accent).clickable(onClick = pasteClip).padding(vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = null, tint = onAccentOf(p), modifier = Modifier.size(18.dp))
+                                    Text("Colar link copiado", color = onAccentOf(p), fontSize = font(15), fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(start = 8.dp))
+                                }
+                            }
+                        } else {
+                            Column(Modifier.fillMaxSize().padding(bottom = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                Icon(if (filter == "Favoritos") Icons.Default.Favorite else Icons.Default.Bookmark, contentDescription = null, tint = muted.copy(alpha = .8f), modifier = Modifier.size(32.dp))
+                                Spacer(Modifier.height(10.dp))
+                                Text(if (search.isNotBlank()) "Nada encontrado" else when (filter) { "Favoritos" -> "Nenhum favorito ainda"; "Ocultos" -> "Nada oculto"; else -> "Nada por aqui ainda" },
+                                    color = primaryText, fontSize = font(15), fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(4.dp))
+                                Text(if (search.isNotBlank()) "Tente outra busca." else when (filter) { "Favoritos" -> "Toque no \u2665 de um link para fix\u00e1-lo aqui."; "Ocultos" -> "Links ocultados aparecem aqui."; else -> "Salve links nesta cole\u00e7\u00e3o com o bot\u00e3o Salvar link." },
+                                    color = muted, fontSize = font(12), textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+                            }
                         }
                     } else {
+                        val groups = shown.groupBy { timelineGroup(it.savedAt) }
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(if (gridView) 2 else 1), contentPadding = PaddingValues(bottom = 130.dp),
+                            columns = GridCells.Fixed(if (gridView) 2 else 1), contentPadding = PaddingValues(bottom = 110.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            if (favs.isNotEmpty()) {
-                                item(key = "__favs", span = { GridItemSpan(maxLineSpan) }) {
-                                    Column {
-                                        Text("Favoritos", color = primaryText, fontSize = font(15), fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(bottom = 8.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            items(favs, key = { it.docId }) { l -> Box(Modifier.animateItem()) { FavCard(l, p, font) { opening = l.docId } } }
-                                        }
-                                    }
+                            groups.forEach { (label, list) ->
+                                item(key = "__h_$label", span = { GridItemSpan(maxLineSpan) }) { TimelineHeader(label, p, font) }
+                                items(list, key = { it.docId }) { link ->
+                                    LaunchedEffect(link.docId) { vm.fetchOg(link) }
+                                    SwipeLinkItem(
+                                        link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem(),
+                                        onOpen = { opening = link.docId }, onToggleFav = { vm.toggleFavorite(link) }, onDelete = { deleteWithUndo(link) },
+                                        onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection },
+                                        onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) }
+                                    )
                                 }
-                            }
-                            item(key = "__hdr", span = { GridItemSpan(maxLineSpan) }) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (favs.isNotEmpty()) 6.dp else 0.dp)) {
-                                    Text(if (filter == "Todos") "Recentes" else filter, color = primaryText, fontSize = font(17), fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                                    Text("${shown.size} itens", color = muted, fontSize = font(12))
-                                    Icon(if (gridView) Icons.Default.ViewAgenda else Icons.Default.GridView, contentDescription = "Alternar lista e grade", tint = accent,
-                                        modifier = Modifier.clip(CircleShape).clickable { vm.setGridView(!gridView) }.padding(6.dp))
-                                    if (filter !in builtIns && filter != "Ocultos") {
-                                        Box {
-                                            Icon(Icons.Default.MoreVert, contentDescription = "Opções da coleção", tint = muted,
-                                                modifier = Modifier.clip(CircleShape).clickable { headerMenu = true }.padding(6.dp))
-                                            DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }, containerColor = dialogSurface) {
-                                                DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
-                                                    onClick = { headerMenu = false; renameText = filter; renameTarget = filter })
-                                                DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
-                                                    onClick = { headerMenu = false; vm.hideCollection(filter); collectionFilter = "Todos" })
-                                                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
-                                                    onClick = { headerMenu = false; deleteTarget = filter })
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            items(shown, key = { it.docId }) { link ->
-                                LaunchedEffect(link.docId) { vm.fetchOg(link) }
-                                SwipeLinkItem(
-                                    link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem(),
-                                    onOpen = { opening = link.docId }, onToggleFav = { vm.toggleFavorite(link) }, onDelete = { deleteWithUndo(link) },
-                                    onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection },
-                                    onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) }
-                                )
                             }
                         }
                     }
                 }
             }
-            SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 92.dp, start = 16.dp, end = 16.dp))
-            AnimatedVisibility(
-                visible = barVisible, modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(tween(240)) { it } + fadeIn(tween(240)), exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160))
-            ) { GlassBar(
-                p, font, collectionFilter, Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 14.dp),
-                onHome = { collectionFilter = "Todos"; search = "" }, onFavs = { collectionFilter = "Favoritos" },
-                onSearch = { runCatching { searchFocus.requestFocus() } }, onSettings = { showSettings = true }
-            ) }
-            val fabScale = remember { MutableTransitionState(false) }
-            LaunchedEffect(barVisible) { fabScale.targetState = barVisible }
-            AnimatedVisibility(
-                visibleState = fabScale, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 36.dp),
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) + fadeIn(),
-                exit = scaleOut(tween(180)) + fadeOut(tween(160))
-            ) {
-                val fabSrc = remember { MutableInteractionSource() }
-                val rot by animateFloatAsState(if (showAdd) 45f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "fab")
-                FloatingActionButton(onClick = { collection = if (collectionFilter in allCollections) collectionFilter else "Inbox"; showAdd = true },
-                    containerColor = accent, contentColor = onAccentOf(p), interactionSource = fabSrc,
-                    modifier = Modifier.pressScale(fabSrc, 0.92f), shape = RoundedCornerShape(22.dp)) {
-                    Icon(Icons.Default.Add, contentDescription = "Adicionar link", modifier = Modifier.rotate(rot))
-                }
-            }
+            SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp, start = 16.dp, end = 16.dp))
+            ExtendedFloatingActionButton(
+                onClick = { collection = if (collectionFilter in allCollections) collectionFilter else "Inbox"; showAdd = true },
+                expanded = barVisible,
+                icon = { Icon(Icons.Default.Add, contentDescription = "Salvar link") },
+                text = { Text("Salvar link", fontWeight = FontWeight.ExtraBold) },
+                containerColor = accent, contentColor = onAccentOf(p), shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = 20.dp)
+            )
         }
         if (openFade > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = openFade }.background(canvas))
         renameTarget?.let { old ->

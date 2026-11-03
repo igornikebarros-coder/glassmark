@@ -162,9 +162,60 @@ enum class CardSize(val key: String, val label: String) {
 
 /** Miniatura só quando existe imagem de prévia (og:image); fundo neutro, sem gradiente colorido. */
 @Composable
-fun Thumb(link: LinkEntity, modifier: Modifier, corner: Dp = 16.dp) {
+fun Thumb(link: LinkEntity, modifier: Modifier, corner: Dp = 12.dp) {
     Box(modifier.clip(RoundedCornerShape(corner)).background(Color(0xFF8A94A6).copy(alpha = .18f))) {
         AsyncImage(model = link.ogImage, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/** Agrupa a linha do tempo: Hoje / Ontem / Esta semana / Antes. */
+fun timelineGroup(ts: Long): String {
+    val c = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val today = c.timeInMillis
+    val day = 86_400_000L
+    return when {
+        ts >= today -> "Hoje"
+        ts >= today - day -> "Ontem"
+        ts >= today - 6 * day -> "Esta semana"
+        else -> "Antes"
+    }
+}
+
+@Composable
+fun TimelineHeader(label: String, p: Palette, fs: (Int) -> TextUnit) {
+    Row(Modifier.padding(top = 16.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(if (label == "Hoje") p.accent else p.muted.copy(alpha = .6f)))
+        Text(label.uppercase(), color = p.muted, fontSize = fs(11), fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 8.dp))
+    }
+}
+
+/** Aba minimalista: texto + contagem, sublinhado na selecionada. Toque longo abre o menu da aba. */
+@Composable
+fun MinimalTab(
+    label: String, count: Int?, selected: Boolean, p: Palette, fs: (Int) -> TextUnit, icon: ImageVector? = null,
+    onClick: () -> Unit, onLongClick: (() -> Unit)? = null
+) {
+    val fg by animateColorAsState(if (selected) p.text else p.muted, label = "tabFg")
+    val line by animateColorAsState(if (selected) p.accent else Color.Transparent, label = "tabLine")
+    val click by rememberUpdatedState(onClick)
+    val long by rememberUpdatedState(onLongClick)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Column(
+        Modifier.pointerInput(Unit) {
+            detectTapGestures(
+                onTap = { click() },
+                onLongPress = { long?.let { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() } }
+            )
+        }
+    ) {
+        Row(Modifier.padding(top = 8.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(16.dp))
+            Text(label, color = fg, fontSize = fs(16), fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold, maxLines = 1)
+            if (count != null) Text("$count", color = p.muted, fontSize = fs(12), fontWeight = FontWeight.SemiBold)
+        }
+        Box(Modifier.height(2.dp).fillMaxWidth().clip(RoundedCornerShape(1.dp)).background(line))
     }
 }
 
@@ -173,20 +224,19 @@ private fun SummaryBlock(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, bu
     var expanded by remember { mutableStateOf(false) }
     if (link.summary.isNotBlank()) {
         Row(
-            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accent.copy(alpha = .12f))
-                .clickable { expanded = !expanded }.padding(8.dp).animateContentSize()
+            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }.animateContentSize()
         ) {
-            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(14.dp).padding(top = 2.dp))
-            Text(link.summary, color = p.text, fontSize = fs(12), lineHeight = fs(16), maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(13.dp).padding(top = 2.dp))
+            Text(link.summary, color = p.text.copy(alpha = .78f), fontSize = fs(12), lineHeight = fs(17), maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
         }
     } else if (busy) {
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = p.accent)
+            CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = p.accent)
             Text("Resumindo…", color = p.muted, fontSize = fs(11), modifier = Modifier.padding(start = 8.dp))
         }
     } else {
-        Row(Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onSummarize).padding(vertical = 4.dp, horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(14.dp))
+        Row(Modifier.padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onSummarize).padding(vertical = 4.dp, horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(13.dp))
             Text("Resumir com IA", color = p.accent, fontSize = fs(11), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
         }
     }
@@ -212,14 +262,19 @@ fun SwipeLinkItem(
         backgroundContent = {
             val dir = state.dismissDirection
             val c by animateColorAsState(
-                when (dir) { SwipeToDismissBoxValue.StartToEnd -> Color(0xFF5B8DEF); SwipeToDismissBoxValue.EndToStart -> Color(0xFFE5484D); else -> Color.Transparent }, label = "swipeBg"
+                when (dir) { SwipeToDismissBoxValue.StartToEnd -> Color(0xFF5B8DEF); SwipeToDismissBoxValue.EndToStart -> Color(0xFFFF4D6A); else -> Color.Transparent }, label = "swipeBg"
             )
             Box(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).background(c).padding(horizontal = 24.dp),
+                Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(c).padding(horizontal = 22.dp),
                 contentAlignment = if (dir == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
             ) {
-                if (dir == SwipeToDismissBoxValue.StartToEnd) Icon(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Ocultar", tint = Color.White)
-                else if (dir == SwipeToDismissBoxValue.EndToStart) Icon(Icons.Default.Delete, "Apagar", tint = Color.White)
+                if (dir == SwipeToDismissBoxValue.StartToEnd) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = Color.White)
+                    Text(if (hiddenMode) "Mostrar" else "Ocultar", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+                } else if (dir == SwipeToDismissBoxValue.EndToStart) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Delete, null, tint = Color.White)
+                    Text("Excluir", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
     ) { LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen, onToggleFav, onDelete, onEdit, onHide, onSummarize) }
@@ -231,11 +286,15 @@ private fun LinkCard(
     onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
 ) {
     val src = remember { MutableInteractionSource() }
-    val sc by animateFloatAsState(if (opening) 1.05f else 1f, spring(stiffness = 400f), label = "open")
+    val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
     var menu by remember { mutableStateOf(false) }
     val d = domainOf(link.url)
     val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
     val banner = hasOg && (grid || size == CardSize.LARGE)
+    val sideThumb = hasOg && !banner
+    val shape = RoundedCornerShape(18.dp)
+    val title = link.title.ifBlank { d }
+    val meta = "$d · ${relTime(link.savedAt)}"
     val moreMenu: @Composable () -> Unit = {
         Box {
             Icon(Icons.Default.MoreVert, "Mais opções", tint = p.muted, modifier = Modifier.clip(CircleShape).clickable { menu = true }.padding(6.dp))
@@ -248,8 +307,8 @@ private fun LinkCard(
         }
     }
     GlassSurface(
-        p, RoundedCornerShape(22.dp),
-        Modifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(RoundedCornerShape(22.dp))
+        p, shape,
+        Modifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
             .clickable(interactionSource = src, indication = LocalIndication.current, onClick = onOpen)
     ) {
         Column {
@@ -257,24 +316,34 @@ private fun LinkCard(
                 val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
                 Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
             }
-            Row(Modifier.padding(start = 12.dp, top = if (banner) 2.dp else 12.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
-                if (hasOg && !banner) {
-                    Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp))
-                    Spacer(Modifier.width(12.dp))
-                }
-                Column(Modifier.weight(1f)) {
+            if (grid) {
+                Column(Modifier.padding(start = 12.dp, end = 4.dp, top = if (banner) 0.dp else 12.dp, bottom = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Favicon(d, 16.dp)
-                        Text("$d · ${relTime(link.savedAt)}", color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+                        Favicon(d, 14.dp)
+                        Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp, end = 8.dp))
                     }
-                    Text(link.title.ifBlank { d }, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    Text(title, color = p.text, fontSize = fs(13), fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp, end = 8.dp))
                     if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
-                    SummaryBlock(link, p, fs, summarizing, onSummarize)
-                    if (grid) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.padding(end = 8.dp)) { SummaryBlock(link, p, fs, summarizing, onSummarize) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                         AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu()
                     }
                 }
-                if (!grid) { AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu() }
+            } else {
+                Row(Modifier.padding(start = 12.dp, top = if (banner) 2.dp else 12.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
+                    if (sideThumb) Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp)) else Box(Modifier.padding(top = 2.dp)) { Favicon(d, 30.dp) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, color = p.text, fontSize = fs(15), fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (sideThumb) { Favicon(d, 14.dp); Spacer(Modifier.width(6.dp)) }
+                            Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+                        SummaryBlock(link, p, fs, summarizing, onSummarize)
+                    }
+                    AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu()
+                }
             }
         }
     }
