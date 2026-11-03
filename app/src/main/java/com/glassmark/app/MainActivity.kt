@@ -1,10 +1,3 @@
-    val filteredFor: (String) -> List<LinkEntity> = { filter ->
-        links.filter {
-            (if (filter == "Ocultos") it.hidden else !it.hidden && (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter)) &&
-            (it.url.contains(search, true) || it.title.contains(search, true))
-        }
-    }
-    val hiddenLinksCount = links.count { it.hidden }
 @file:OptIn(ExperimentalFoundationApi::class)
 
 package com.glassmark.app
@@ -225,10 +218,11 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val builtIns = setOf("Todos", "Favoritos", "Inbox")
     val filteredFor: (String) -> List<LinkEntity> = { filter ->
         links.filter {
-            (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter) &&
+            (if (filter == "Ocultos") it.hidden else !it.hidden && (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter)) &&
             (it.url.contains(search, true) || it.title.contains(search, true))
         }
     }
+    val hiddenLinksCount = links.count { it.hidden }
 
     Box(Modifier.fillMaxSize()) {
         val blurRadius by animateDpAsState(if (showAdd || showSettings || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
