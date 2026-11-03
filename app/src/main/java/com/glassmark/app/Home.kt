@@ -79,7 +79,7 @@ fun Favicon(domain: String, size: Dp) {
         SubcomposeAsyncImage(
             model = "https://www.google.com/s2/favicons?domain=$domain&sz=64", contentDescription = null, modifier = Modifier.fillMaxSize(),
             loading = { letter() }, error = { letter() },
-            success = { Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = .93f)).padding(size * 0.2f)) { SubcomposeAsyncImageContent() } }
+            success = { val sc = this; Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = .93f)).padding(size * 0.2f)) { sc.SubcomposeAsyncImageContent() } }
         )
     }
 }
