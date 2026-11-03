@@ -25,6 +25,9 @@ interface LinkDao {
     @Query("UPDATE saved_links SET isFavorite = NOT isFavorite WHERE ownerUid = :uid AND docId = :docId")
     suspend fun toggleFavorite(uid: String, docId: String)
 
+    @Query("UPDATE saved_links SET collection = :new WHERE ownerUid = :uid AND collection = :old")
+    suspend fun moveCollection(uid: String, old: String, new: String)
+
     @Query("SELECT COUNT(*) FROM saved_links WHERE ownerUid = ''")
     suspend fun guestCount(): Int
 }

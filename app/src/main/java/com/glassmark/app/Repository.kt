@@ -124,6 +124,53 @@ class Repository(private val db: GlassmarkDatabase) {
             .addOnFailureListener { onError(it.message ?: "erro") }
     }
 
+    /** Edita URL, título e coleção de um link (a coleção nova é criada se não existir). */
+    suspend fun updateLink(uid: String, link: LinkEntity, onError: (String) -> Unit) {
+        val l = link.copy(collection = link.collection.ifBlank { "Inbox" })
+        if (uid.isEmpty()) {
+            db.linkDao().insert(l)
+            db.collectionDao().insert(CollectionEntity("", l.collection))
+        } else {
+            userDoc(uid).collection("links").document(l.docId).set(l.toMap(), SetOptions.merge())
+                .addOnFailureListener { onError(it.message ?: "erro") }
+            addCollection(uid, l.collection, onError)
+        }
+    }
+
+    /** Renomeia a coleção: os links dela passam para o novo nome. */
+    suspend fun renameCollection(uid: String, old: String, new: String, onError: (String) -> Unit) {
+        val clean = new.trim()
+        if (clean.isEmpty() || clean == old) return
+        moveCollection(uid, old, clean, keepTarget = true, onError = onError)
+    }
+
+    /** Exclui a coleção; os links dentro dela NÃO são apagados, vão para a Inbox. */
+    suspend fun deleteCollection(uid: String, name: String, onError: (String) -> Unit) {
+        moveCollection(uid, name, "Inbox", keepTarget = false, onError = onError)
+    }
+
+    private suspend fun moveCollection(uid: String, old: String, target: String, keepTarget: Boolean, onError: (String) -> Unit) {
+        if (uid.isEmpty()) {
+            db.withTransaction {
+                db.linkDao().moveCollection("", old, target)
+                db.collectionDao().delete("", old)
+                if (keepTarget) db.collectionDao().insert(CollectionEntity("", target))
+            }
+            return
+        }
+        val affected = db.linkDao().all(uid).filter { it.collection == old }
+        val col = userDoc(uid).collection("collections")
+        val ops = ArrayList<(com.google.firebase.firestore.WriteBatch) -> Unit>()
+        if (keepTarget) ops += { b -> b.set(col.document(collId(target)), mapOf("name" to target), SetOptions.merge()) }
+        ops += { b -> b.delete(col.document(collId(old))) }
+        affected.forEach { l -> ops += { b -> b.set(userDoc(uid).collection("links").document(l.docId), mapOf("collection" to target), SetOptions.merge()) } }
+        ops.chunked(400).forEach { chunk ->
+            val batch = fs.batch()
+            chunk.forEach { it(batch) }
+            batch.commit().addOnFailureListener { onError(it.message ?: "erro") }
+        }
+    }
+
     /**
      * Envia os links/coleções locais (visitante) para a conta. As linhas locais só são apagadas
      * depois que o Firestore confirma a gravação; enquanto isso nada se perde.

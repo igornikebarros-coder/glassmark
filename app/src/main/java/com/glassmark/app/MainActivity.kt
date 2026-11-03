@@ -1,6 +1,29 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.glassmark.app
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.draw.rotate
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -56,7 +79,11 @@ class MainActivity : ComponentActivity() {
             val amoledDark by vm.amoledInDark.collectAsState()
             val font by vm.appFont.collectAsState()
             GlassmarkTheme(mode, amoledDark, font) {
-                if (user == null && !guest) AuthScreen(vm) else GlassmarkScreen(vm)
+                AnimatedContent(
+                    targetState = user == null && !guest,
+                    transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300))) togetherWith fadeOut(tween(180)) },
+                    label = "nav"
+                ) { showAuth -> if (showAuth) AuthScreen(vm) else GlassmarkScreen(vm) }
             }
         }
     }
@@ -84,6 +111,16 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var search by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var chipMenu by remember { mutableStateOf<String?>(null) }
+    var headerMenu by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    var editLinkTarget by remember { mutableStateOf<LinkEntity?>(null) }
+    var editUrl by remember { mutableStateOf("") }
+    var editTitle by remember { mutableStateOf("") }
+    var editCollection by remember { mutableStateOf("") }
+    var deleteLinkTarget by remember { mutableStateOf<LinkEntity?>(null) }
     var manualUrl by remember { mutableStateOf("") }
     var manualTitle by remember { mutableStateOf("") }
     var collection by remember { mutableStateOf("Inbox") }
@@ -112,13 +149,17 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val accent = p.accent
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
     val collections = listOf("Todos", "Favoritos") + allCollections
-    val filtered = links.filter {
-        (collectionFilter == "Todos" || (collectionFilter == "Favoritos" && it.isFavorite) || it.collection == collectionFilter) &&
-        (it.url.contains(search, true) || it.title.contains(search, true))
+    val builtIns = setOf("Todos", "Favoritos", "Inbox")
+    val filteredFor: (String) -> List<LinkEntity> = { filter ->
+        links.filter {
+            (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter) &&
+            (it.url.contains(search, true) || it.title.contains(search, true))
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().blur(if (showAdd || showSettings) 16.dp else 0.dp).background(Brush.verticalGradient(p.gradient))) {
+        val blurRadius by animateDpAsState(if (showAdd || showSettings || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
+        Box(Modifier.fillMaxSize().blur(blurRadius).background(Brush.verticalGradient(p.gradient))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,16 +212,36 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 Spacer(Modifier.height(8.dp))
                 if (collectionFilter != "Todos" && collectionFilter !in collections) collectionFilter = "Todos"
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    items(collections) { item ->
-                        GlassPanel(glass, RoundedCornerShape(16.dp), Modifier.width(84.dp).clickable { collectionFilter = item }) {
-                            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(if (item == "Favoritos") Icons.Default.Favorite else Icons.Default.Folder, contentDescription = item, tint = if (collectionFilter == item) accent else muted)
-                                Text(item, color = primaryText, fontSize = font(10), maxLines = 1)
+                    items(collections, key = { it }) { item ->
+                        val src = remember { MutableInteractionSource() }
+                        val selected = collectionFilter == item
+                        val tint by animateColorAsState(if (selected) accent else muted, tween(200), label = "chip")
+                        val editable = item !in builtIns
+                        Box(Modifier.animateItem()) {
+                            GlassPanel(
+                                glass, RoundedCornerShape(16.dp),
+                                Modifier.width(84.dp).pressScale(src).clip(RoundedCornerShape(16.dp)).combinedClickable(
+                                    interactionSource = src, indication = LocalIndication.current,
+                                    onClick = { collectionFilter = item },
+                                    onLongClick = if (editable) ({ chipMenu = item }) else null
+                                )
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(if (item == "Favoritos") Icons.Default.Favorite else Icons.Default.Folder, contentDescription = item, tint = tint)
+                                    Text(item, color = primaryText, fontSize = font(10), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                            DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
+                                DropdownMenuItem(text = { Text("Renomear", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
+                                    onClick = { chipMenu = null; renameText = item; renameTarget = item })
+                                DropdownMenuItem(text = { Text("Excluir", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
+                                    onClick = { chipMenu = null; deleteTarget = item })
                             }
                         }
                     }
-                    item {
-                        GlassPanel(glass, RoundedCornerShape(16.dp), Modifier.width(84.dp).clickable { showNewCollection = true }) {
+                    item(key = "__new") {
+                        val src = remember { MutableInteractionSource() }
+                        GlassPanel(glass, RoundedCornerShape(16.dp), Modifier.animateItem().width(84.dp).pressScale(src).clip(RoundedCornerShape(16.dp)).clickable(interactionSource = src, indication = LocalIndication.current) { showNewCollection = true }) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.Add, contentDescription = "Nova coleção", tint = muted)
                                 Text("Nova", color = primaryText, fontSize = font(10), maxLines = 1)
@@ -189,65 +250,156 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     }
                 }
                 Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (collectionFilter == "Todos") "Salvos recentemente" else collectionFilter, color = primaryText, fontSize = font(17), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Text("${filtered.size} itens", color = muted, fontSize = font(12))
-                }
-                Spacer(Modifier.height(10.dp))
-                if (filtered.isEmpty()) {
-                    GlassPanel(glass, RoundedCornerShape(26.dp), Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(Icons.Default.Bookmark, contentDescription = null, tint = muted, modifier = Modifier.size(34.dp))
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                "Sua biblioteca está vazia",
-                                color = primaryText,
-                                fontSize = font(16),
-                                fontWeight = FontWeight.Medium,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Compartilhe um link com o Link para salvá-lo.",
-                                color = muted,
-                                fontSize = font(13),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filtered, key = { it.docId }) { link ->
-                            GlassPanel(glass, RoundedCornerShape(22.dp), Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(15.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(link.title.ifBlank { Uri.parse(link.url).host ?: link.url }, color = primaryText, fontSize = font(16), fontWeight = FontWeight.SemiBold, maxLines = 2)
-                                            Text(link.collection, color = muted, fontSize = font(11))
-                                        }
-                                        Icon(Icons.Default.Favorite, contentDescription = "Alternar favorito", tint = if (link.isFavorite) Color(0xFFFF729A) else muted,
-                                            modifier = Modifier.clickable { vm.toggleFavorite(link) }.padding(8.dp))
-                                        Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = muted,
-                                            modifier = Modifier.clickable { vm.deleteLink(link) }.padding(8.dp))
+                // Conteúdo troca com animação ao mudar de aba/coleção
+                AnimatedContent(
+                    targetState = collectionFilter, modifier = Modifier.weight(1f),
+                    transitionSpec = { (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 24 }) togetherWith fadeOut(tween(120)) },
+                    label = "tab"
+                ) { filter ->
+                    val shown = filteredFor(filter)
+                    Column(Modifier.fillMaxSize()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (filter == "Todos") "Salvos recentemente" else filter, color = primaryText, fontSize = font(17), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("${shown.size} itens", color = muted, fontSize = font(12))
+                            if (filter !in builtIns) {
+                                Box {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Opções da coleção", tint = muted,
+                                        modifier = Modifier.clip(CircleShape).clickable { headerMenu = true }.padding(6.dp))
+                                    DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }, containerColor = dialogSurface) {
+                                        DropdownMenuItem(text = { Text("Renomear coleção", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
+                                            onClick = { headerMenu = false; renameText = filter; renameTarget = filter })
+                                        DropdownMenuItem(text = { Text("Excluir coleção", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
+                                            onClick = { headerMenu = false; deleteTarget = filter })
                                     }
-                                    Spacer(Modifier.height(7.dp))
-                                    Text(link.url, color = accent, fontSize = font(12), maxLines = 2,
-                                        modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url))) } })
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        if (shown.isEmpty()) {
+                            GlassPanel(glass, RoundedCornerShape(26.dp), Modifier.fillMaxWidth()) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 28.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = muted, modifier = Modifier.size(34.dp))
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        if (filter == "Todos") "Sua biblioteca está vazia" else "Nada por aqui ainda",
+                                        color = primaryText, fontSize = font(16), fontWeight = FontWeight.Medium,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Compartilhe um link com o Link para salvá-lo.",
+                                        color = muted, fontSize = font(13),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                items(shown, key = { it.docId }) { link ->
+                                    val src = remember { MutableInteractionSource() }
+                                    GlassPanel(
+                                        glass, RoundedCornerShape(22.dp),
+                                        Modifier.fillMaxWidth().animateItem().pressScale(src, 0.98f).clip(RoundedCornerShape(22.dp)).clickable(interactionSource = src, indication = LocalIndication.current) {
+                                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url))) }
+                                        }
+                                    ) {
+                                        Column(Modifier.padding(start = 15.dp, top = 15.dp, bottom = 15.dp, end = 7.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(link.title.ifBlank { Uri.parse(link.url).host ?: link.url }, color = primaryText, fontSize = font(16), fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                                    Text(link.collection, color = muted, fontSize = font(11))
+                                                }
+                                                AnimatedHeart(link.isFavorite, muted) { vm.toggleFavorite(link) }
+                                                Icon(Icons.Default.Edit, contentDescription = "Editar link", tint = muted,
+                                                    modifier = Modifier.clip(CircleShape).clickable { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection }.padding(8.dp))
+                                                Icon(Icons.Default.Delete, contentDescription = "Excluir link", tint = muted,
+                                                    modifier = Modifier.clip(CircleShape).clickable { deleteLinkTarget = link }.padding(8.dp))
+                                            }
+                                            Spacer(Modifier.height(7.dp))
+                                            Text(link.url, color = accent, fontSize = font(12), maxLines = 2)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-            FloatingActionButton(onClick = { collection = if (collectionFilter in allCollections) collectionFilter else "Inbox"; showAdd = true }, containerColor = glass, contentColor = accent,
-                modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(22.dp), shape = RoundedCornerShape(20.dp)) {
-                Icon(Icons.Default.Add, contentDescription = "Adicionar link")
+            val fabScale = remember { MutableTransitionState(false).apply { targetState = true } }
+            AnimatedVisibility(
+                visibleState = fabScale, modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(22.dp),
+                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)) + fadeIn()
+            ) {
+                val fabSrc = remember { MutableInteractionSource() }
+                val rot by animateFloatAsState(if (showAdd) 45f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "fab")
+                FloatingActionButton(onClick = { collection = if (collectionFilter in allCollections) collectionFilter else "Inbox"; showAdd = true },
+                    containerColor = glass, contentColor = accent, interactionSource = fabSrc,
+                    modifier = Modifier.pressScale(fabSrc, 0.92f), shape = RoundedCornerShape(20.dp)) {
+                    Icon(Icons.Default.Add, contentDescription = "Adicionar link", modifier = Modifier.rotate(rot))
+                }
             }
+        }
+        renameTarget?.let { old ->
+            val reserved = renameText.trim() in setOf("Todos", "Favoritos")
+            AlertDialog(onDismissRequest = { renameTarget = null }, containerColor = dialogSurface,
+                title = { Text("Renomear coleção", color = primaryText) },
+                text = { Column {
+                    OutlinedTextField(value = renameText, onValueChange = { renameText = it }, label = { Text("Nome") }, singleLine = true, isError = reserved, modifier = Modifier.fillMaxWidth())
+                    if (reserved) Text("Esse nome é reservado.", color = p.error, fontSize = font(12), modifier = Modifier.padding(top = 4.dp))
+                } },
+                confirmButton = { TextButton(enabled = renameText.isNotBlank() && !reserved, onClick = {
+                    val n = renameText.trim()
+                    vm.renameCollection(old, n)
+                    if (collectionFilter == old) collectionFilter = n
+                    renameTarget = null
+                }) { Text("Salvar") } },
+                dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancelar") } })
+        }
+        deleteTarget?.let { name ->
+            val n = links.count { it.collection == name }
+            AlertDialog(onDismissRequest = { deleteTarget = null }, containerColor = dialogSurface,
+                title = { Text("Excluir coleção?", color = primaryText) },
+                text = { Text(
+                    "A coleção \"$name\" será excluída. " + when (n) {
+                        0 -> "Ela não tem links."
+                        1 -> "O link dentro dela não será apagado: ele será movido para a Inbox (continua em Todos)."
+                        else -> "Os $n links dentro dela não serão apagados: eles serão movidos para a Inbox (continuam em Todos)."
+                    }, color = primaryText) },
+                confirmButton = { TextButton(onClick = {
+                    vm.deleteCollection(name)
+                    if (collectionFilter == name) collectionFilter = "Todos"
+                    deleteTarget = null
+                }) { Text("Excluir", color = p.error) } },
+                dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") } })
+        }
+        editLinkTarget?.let { target ->
+            AlertDialog(onDismissRequest = { editLinkTarget = null }, containerColor = dialogSurface,
+                title = { Text("Editar link", color = primaryText) },
+                text = { Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(value = editUrl, onValueChange = { editUrl = it }, label = { Text("URL") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = editTitle, onValueChange = { editTitle = it }, label = { Text("Título") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = editCollection, onValueChange = { editCollection = it }, label = { Text("Coleção") }, modifier = Modifier.fillMaxWidth())
+                } },
+                confirmButton = { TextButton(onClick = {
+                    val url = editUrl.trim()
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        vm.updateLink(target.copy(url = url, title = editTitle.trim(), collection = editCollection.trim().ifBlank { "Inbox" }))
+                        editLinkTarget = null
+                    }
+                }) { Text("Salvar") } },
+                dismissButton = { TextButton(onClick = { editLinkTarget = null }) { Text("Cancelar") } })
+        }
+        deleteLinkTarget?.let { link ->
+            AlertDialog(onDismissRequest = { deleteLinkTarget = null }, containerColor = dialogSurface,
+                title = { Text("Excluir link?", color = primaryText) },
+                text = { Text("\"${link.title.ifBlank { Uri.parse(link.url).host ?: link.url }}\" será removido da sua biblioteca.", color = primaryText) },
+                confirmButton = { TextButton(onClick = { vm.deleteLink(link); deleteLinkTarget = null }) { Text("Excluir", color = p.error) } },
+                dismissButton = { TextButton(onClick = { deleteLinkTarget = null }) { Text("Cancelar") } })
         }
         if (showAdd) {
             AlertDialog(onDismissRequest = { showAdd = false }, containerColor = dialogSurface,
@@ -317,6 +469,7 @@ private fun SettingsDialog(
     onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
 ) {
     Dialog(onDismissRequest = onClose) {
+        PopIn {
         Surface(
             color = p.dialog, shape = RoundedCornerShape(28.dp),
             border = BorderStroke(1.dp, p.stroke), tonalElevation = 0.dp,
@@ -386,6 +539,7 @@ private fun SettingsDialog(
                     TextButton(onClick = onClose) { Text("Fechar") }
                 }
             }
+        }
         }
     }
 }

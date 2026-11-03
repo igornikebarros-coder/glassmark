@@ -197,6 +197,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun addCollection(name: String) { viewModelScope.launch { repo.addCollection(ownerUid.value, name, ::report) } }
     fun toggleFavorite(link: LinkEntity) { viewModelScope.launch { repo.toggleFavorite(ownerUid.value, link, ::report) } }
+    fun updateLink(link: LinkEntity) { viewModelScope.launch { repo.updateLink(ownerUid.value, link, ::report) } }
+    fun renameCollection(old: String, new: String) { viewModelScope.launch { repo.renameCollection(ownerUid.value, old, new, ::report) } }
+    fun deleteCollection(name: String) { viewModelScope.launch { repo.deleteCollection(ownerUid.value, name, ::report) } }
     fun deleteLink(link: LinkEntity) { viewModelScope.launch { repo.deleteLink(ownerUid.value, link, ::report) } }
 
     fun uploadGuest() {
