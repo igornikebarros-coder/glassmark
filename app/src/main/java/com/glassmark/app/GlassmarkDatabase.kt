@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [LinkEntity::class, CollectionEntity::class], version = 2, exportSchema = false)
+@Database(entities = [LinkEntity::class, CollectionEntity::class], version = 3, exportSchema = false)
 abstract class GlassmarkDatabase : RoomDatabase() {
     abstract fun linkDao(): LinkDao
     abstract fun collectionDao(): CollectionDao
@@ -17,5 +17,13 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         db.execSQL("ALTER TABLE saved_links ADD COLUMN ownerUid TEXT NOT NULL DEFAULT ''")
         db.execSQL("UPDATE saved_links SET docId = lower(hex(randomblob(16)))")
         db.execSQL("CREATE TABLE IF NOT EXISTS `collections` (`ownerUid` TEXT NOT NULL, `name` TEXT NOT NULL, PRIMARY KEY(`ownerUid`, `name`))")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE saved_links ADD COLUMN ogImage TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE saved_links ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE saved_links ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     }
 }

@@ -69,6 +69,9 @@ class Repository(private val db: GlassmarkDatabase) {
                     collection = d.getString("collection") ?: "Inbox",
                     savedAt = d.getLong("savedAt") ?: System.currentTimeMillis(),
                     isFavorite = d.getBoolean("isFavorite") ?: false,
+                    ogImage = d.getString("ogImage").orEmpty(),
+                    summary = d.getString("summary").orEmpty(),
+                    hidden = d.getBoolean("hidden") ?: false,
                     docId = d.id,
                     ownerUid = uid
                 )
@@ -121,6 +124,16 @@ class Repository(private val db: GlassmarkDatabase) {
     suspend fun deleteLink(uid: String, link: LinkEntity, onError: (String) -> Unit) {
         if (uid.isEmpty()) db.linkDao().delete("", link.docId)
         else userDoc(uid).collection("links").document(link.docId).delete()
+            .addOnFailureListener { onError(it.message ?: "erro") }
+    }
+
+    /** Grava um campo isolado (miniatura, resumo, oculto) sem sobrescrever o resto do link. */
+    suspend fun setField(uid: String, docId: String, field: String, value: Any, onError: (String) -> Unit) {
+        if (uid.isEmpty()) when (field) {
+            "ogImage" -> db.linkDao().setOg("", docId, value as String)
+            "summary" -> db.linkDao().setSummary("", docId, value as String)
+            "hidden" -> db.linkDao().setHidden("", docId, value as Boolean)
+        } else userDoc(uid).collection("links").document(docId).set(mapOf(field to value), SetOptions.merge())
             .addOnFailureListener { onError(it.message ?: "erro") }
     }
 

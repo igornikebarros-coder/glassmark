@@ -1,9 +1,24 @@
+    val filteredFor: (String) -> List<LinkEntity> = { filter ->
+        links.filter {
+            (if (filter == "Ocultos") it.hidden else !it.hidden && (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter)) &&
+            (it.url.contains(search, true) || it.title.contains(search, true))
+        }
+    }
+    val hiddenLinksCount = links.count { it.hidden }
 @file:OptIn(ExperimentalFoundationApi::class)
 
 package com.glassmark.app
 
 import android.content.Intent
 import android.content.Context
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -140,6 +155,11 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val scale by vm.textScale.collectAsState()
     val amoledDark by vm.amoledInDark.collectAsState()
     val appFont by vm.appFont.collectAsState()
+    val gridView by vm.gridView.collectAsState()
+    val cardSize by vm.cardSize.collectAsState()
+    val hiddenCols by vm.hiddenCollections.collectAsState()
+    val summarizing by vm.summarizing.collectAsState()
+    val aiMsg by vm.aiMessage.collectAsState()
     val context = LocalContext.current
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -159,7 +179,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val dialogSurface = p.dialog
     val accent = p.accent
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
-    val collections = listOf("Todos", "Favoritos") + allCollections
+    val collections = listOf("Todos", "Favoritos") + allCollections.filter { it !in hiddenCols } + (if (collectionFilter == "Ocultos") listOf("Ocultos") else emptyList())
     val snack = remember { SnackbarHostState() }
     val uiScope = rememberCoroutineScope()
     val searchFocus = remember { FocusRequester() }
@@ -172,6 +192,15 @@ private fun GlassmarkScreen(vm: AppViewModel) {
             if (snack.showSnackbar("Link excluído", actionLabel = "Desfazer", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.updateLink(l)
         }
     }
+    val hideWithUndo: (LinkEntity) -> Unit = { l ->
+        val toHide = !l.hidden
+        vm.setLinkHidden(l, toHide)
+        uiScope.launch {
+            snack.currentSnackbarData?.dismiss()
+            if (snack.showSnackbar(if (toHide) "Link ocultado" else "Link visível de novo", actionLabel = "Desfazer", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.setLinkHidden(l, !toHide)
+        }
+    }
+    LaunchedEffect(aiMsg) { aiMsg?.let { snack.showSnackbar(it); vm.aiMessage.value = null } }
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     var resumeTick by remember { mutableIntStateOf(0) }
     DisposableEffect(lifecycleOwner) {
@@ -261,15 +290,17 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 if (collectionFilter != "Todos" && collectionFilter !in collections) collectionFilter = "Todos"
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     items(collections, key = { it }) { item ->
-                        val editable = item !in builtIns
-                        val cnt = when (item) { "Todos" -> links.size; "Favoritos" -> links.count { it.isFavorite }; else -> links.count { it.collection == item } }
+                        val editable = item !in builtIns && item != "Ocultos"
+                        val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
                         Box(Modifier.animateItem()) {
                             GlassChip(item, cnt, collectionFilter == item, p, font, icon = if (item == "Favoritos") Icons.Default.Favorite else null,
                                 onClick = { collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
                             DropdownMenu(expanded = chipMenu == item, onDismissRequest = { chipMenu = null }, containerColor = dialogSurface) {
-                                DropdownMenuItem(text = { Text("Renomear", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
+                                DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
                                     onClick = { chipMenu = null; renameText = item; renameTarget = item })
-                                DropdownMenuItem(text = { Text("Excluir", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
+                                DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
+                                    onClick = { chipMenu = null; vm.hideCollection(item); if (collectionFilter == item) collectionFilter = "Todos" })
+                                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
                                     onClick = { chipMenu = null; deleteTarget = item })
                             }
                         }
@@ -302,9 +333,12 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                             }
                         }
                     } else {
-                        LazyColumn(contentPadding = PaddingValues(bottom = 130.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(if (gridView) 2 else 1), contentPadding = PaddingValues(bottom = 130.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             if (favs.isNotEmpty()) {
-                                item(key = "__favs") {
+                                item(key = "__favs", span = { GridItemSpan(maxLineSpan) }) {
                                     Column {
                                         Text("Favoritos", color = primaryText, fontSize = font(15), fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(bottom = 8.dp))
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -313,18 +347,22 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                                     }
                                 }
                             }
-                            item(key = "__hdr") {
+                            item(key = "__hdr", span = { GridItemSpan(maxLineSpan) }) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = if (favs.isNotEmpty()) 6.dp else 0.dp)) {
                                     Text(if (filter == "Todos") "Recentes" else filter, color = primaryText, fontSize = font(17), fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                                     Text("${shown.size} itens", color = muted, fontSize = font(12))
-                                    if (filter !in builtIns) {
+                                    Icon(if (gridView) Icons.Default.ViewAgenda else Icons.Default.GridView, contentDescription = "Alternar lista e grade", tint = accent,
+                                        modifier = Modifier.clip(CircleShape).clickable { vm.setGridView(!gridView) }.padding(6.dp))
+                                    if (filter !in builtIns && filter != "Ocultos") {
                                         Box {
                                             Icon(Icons.Default.MoreVert, contentDescription = "Opções da coleção", tint = muted,
                                                 modifier = Modifier.clip(CircleShape).clickable { headerMenu = true }.padding(6.dp))
                                             DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }, containerColor = dialogSurface) {
-                                                DropdownMenuItem(text = { Text("Renomear coleção", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
+                                                DropdownMenuItem(text = { Text("Editar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = muted) },
                                                     onClick = { headerMenu = false; renameText = filter; renameTarget = filter })
-                                                DropdownMenuItem(text = { Text("Excluir coleção", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
+                                                DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
+                                                    onClick = { headerMenu = false; vm.hideCollection(filter); collectionFilter = "Todos" })
+                                                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
                                                     onClick = { headerMenu = false; deleteTarget = filter })
                                             }
                                         }
@@ -332,10 +370,12 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                                 }
                             }
                             items(shown, key = { it.docId }) { link ->
+                                LaunchedEffect(link.docId) { vm.fetchOg(link) }
                                 SwipeLinkItem(
-                                    link, p, font, opening == link.docId, Modifier.animateItem(),
+                                    link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem(),
                                     onOpen = { opening = link.docId }, onToggleFav = { vm.toggleFavorite(link) }, onDelete = { deleteWithUndo(link) },
-                                    onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection }
+                                    onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection },
+                                    onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) }
                                 )
                             }
                         }
@@ -460,8 +500,9 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         }
         if (showSettings) {
             SettingsDialog(
-                p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, user = user, hasCustomAvatar = customAvatarUri != null,
-                onTheme = vm::setThemeMode, onScale = vm::setTextScale, onAmoledInDark = vm::setAmoledInDark, onFont = vm::setAppFont,
+                p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, gridView = gridView, cardSize = cardSize, hiddenCols = hiddenCols, hiddenLinksCount = hiddenLinksCount, user = user, hasCustomAvatar = customAvatarUri != null,
+                onTheme = vm::setThemeMode, onScale = vm::setTextScale, onAmoledInDark = vm::setAmoledInDark, onFont = vm::setAppFont, onGrid = vm::setGridView, onCardSize = vm::setCardSize, onUnhideCol = vm::unhideCollection,
+                onShowHiddenLinks = { showSettings = false; collectionFilter = "Ocultos" },
                 onPickAvatar = { avatarPicker.launch(arrayOf("image/*")) },
                 onResetAvatar = { vm.saveCustomAvatar(null) },
                 onLogin = { showSettings = false; vm.goToLogin() },
@@ -485,8 +526,8 @@ private fun GlassTile(color: Color, content: @Composable BoxScope.() -> Unit) {
 
 @Composable
 private fun SettingsDialog(
-    p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
-    onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit, onAmoledInDark: (Boolean) -> Unit, onFont: (AppFont) -> Unit,
+    p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, gridView: Boolean, cardSize: CardSize, hiddenCols: Set<String>, hiddenLinksCount: Int, user: com.google.firebase.auth.FirebaseUser?, hasCustomAvatar: Boolean,
+    onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit, onAmoledInDark: (Boolean) -> Unit, onFont: (AppFont) -> Unit, onGrid: (Boolean) -> Unit, onCardSize: (CardSize) -> Unit, onUnhideCol: (String) -> Unit, onShowHiddenLinks: () -> Unit,
     onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
 ) {
     Dialog(onDismissRequest = onClose) {
@@ -522,11 +563,27 @@ private fun SettingsDialog(
                             RadioButton(selected = font == f, onClick = null, colors = radioColors(p))
                         }
                     }
+                    Text("Visualização", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                    listOf(false to "Lista", true to "Grade (2 colunas)").forEach { (g, l) ->
+                        SettingRow(label = l, p = p, onClick = { onGrid(g) }) { RadioButton(selected = gridView == g, onClick = null, colors = radioColors(p)) }
+                    }
+                    Text("Tamanho dos cartões", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                    CardSize.entries.forEach { cs ->
+                        SettingRow(label = cs.label, p = p, onClick = { onCardSize(cs) }) { RadioButton(selected = cardSize == cs, onClick = null, colors = radioColors(p)) }
+                    }
                     Text("Tamanho da fonte", color = p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
                     TextScale.entries.forEach { sc ->
                         SettingRow(label = sc.label, p = p, onClick = { onScale(sc) }) { RadioButton(selected = scale == sc, onClick = null, colors = radioColors(p)) }
                     }
 
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = p.divider)
+                    SectionHeader("OCULTOS", p)
+                    SettingRow(label = "Links ocultos", subtitle = "$hiddenLinksCount ${if (hiddenLinksCount == 1) "link" else "links"}", p = p) {
+                        TextButton(enabled = hiddenLinksCount > 0, onClick = onShowHiddenLinks) { Text("Ver") }
+                    }
+                    if (hiddenCols.isEmpty()) SettingRow(label = "Abas ocultas", subtitle = "Nenhuma", p = p) {}
+                    hiddenCols.sorted().forEach { c -> SettingRow(label = c, subtitle = "Aba oculta", p = p) { TextButton(onClick = { onUnhideCol(c) }) { Text("Mostrar") } } }
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider(color = p.divider)
                     SectionHeader("CONTA", p)

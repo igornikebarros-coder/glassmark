@@ -15,11 +15,15 @@ data class LinkEntity(
     val savedAt: Long = System.currentTimeMillis(),
     val isFavorite: Boolean = false,
     @ColumnInfo(defaultValue = "") val docId: String = UUID.randomUUID().toString(),
-    @ColumnInfo(defaultValue = "") val ownerUid: String = ""
+    @ColumnInfo(defaultValue = "") val ownerUid: String = "",
+    @ColumnInfo(defaultValue = "") val ogImage: String = "",
+    @ColumnInfo(defaultValue = "") val summary: String = "",
+    @ColumnInfo(defaultValue = "0") val hidden: Boolean = false
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "url" to url, "title" to title, "collection" to collection,
-        "savedAt" to savedAt, "isFavorite" to isFavorite
+        "savedAt" to savedAt, "isFavorite" to isFavorite,
+        "ogImage" to ogImage, "summary" to summary, "hidden" to hidden
     )
 }
 

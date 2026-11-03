@@ -28,6 +28,15 @@ interface LinkDao {
     @Query("UPDATE saved_links SET collection = :newName WHERE ownerUid = :uid AND collection = :oldName")
     suspend fun moveCollection(uid: String, oldName: String, newName: String)
 
+    @Query("UPDATE saved_links SET ogImage = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setOg(uid: String, docId: String, v: String)
+
+    @Query("UPDATE saved_links SET summary = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setSummary(uid: String, docId: String, v: String)
+
+    @Query("UPDATE saved_links SET hidden = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setHidden(uid: String, docId: String, v: Boolean)
+
     @Query("SELECT COUNT(*) FROM saved_links WHERE ownerUid = ''")
     suspend fun guestCount(): Int
 }

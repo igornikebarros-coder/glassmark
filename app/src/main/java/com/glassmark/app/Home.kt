@@ -34,6 +34,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import kotlin.math.absoluteValue
@@ -140,16 +143,58 @@ fun FavCard(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, onOpen: () -> U
     }
 }
 
+enum class CardSize(val key: String, val label: String) {
+    SMALL("small", "Pequeno"), MEDIUM("medium", "Médio"), LARGE("large", "Grande");
+    companion object { fun fromKey(k: String?) = entries.firstOrNull { it.key == k } ?: MEDIUM }
+}
+
+/** Miniatura: imagem og:image (Coil) sobre um gradiente com o favicon, que serve de reserva. */
+@Composable
+fun Thumb(link: LinkEntity, modifier: Modifier, iconSize: Dp = 34.dp, corner: Dp = 16.dp) {
+    val d = domainOf(link.url)
+    val (a, b) = siteColors(d)
+    Box(modifier.clip(RoundedCornerShape(corner)).background(Brush.linearGradient(listOf(a, b))), contentAlignment = Alignment.Center) {
+        Favicon(d, iconSize)
+        if (link.ogImage.isNotBlank() && link.ogImage != "-")
+            AsyncImage(model = link.ogImage, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+private fun SummaryBlock(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, busy: Boolean, onSummarize: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    if (link.summary.isNotBlank()) {
+        Row(
+            Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accent.copy(alpha = .12f))
+                .clickable { expanded = !expanded }.padding(8.dp).animateContentSize()
+        ) {
+            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(14.dp).padding(top = 2.dp))
+            Text(link.summary, color = p.text, fontSize = fs(12), lineHeight = fs(16), maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+        }
+    } else if (busy) {
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = p.accent)
+            Text("Resumindo…", color = p.muted, fontSize = fs(11), modifier = Modifier.padding(start = 8.dp))
+        }
+    } else {
+        Row(Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onSummarize).padding(vertical = 4.dp, horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.AutoAwesome, null, tint = p.accent, modifier = Modifier.size(14.dp))
+            Text("Resumir com IA", color = p.accent, fontSize = fs(11), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+        }
+    }
+}
+
 @Composable
 fun SwipeLinkItem(
-    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, modifier: Modifier = Modifier,
-    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit
+    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
+    modifier: Modifier = Modifier,
+    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
 ) {
-    val fav by rememberUpdatedState(onToggleFav)
+    val hide by rememberUpdatedState(onHide)
     val del by rememberUpdatedState(onDelete)
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
         when (v) {
-            SwipeToDismissBoxValue.StartToEnd -> { fav(); false }
+            SwipeToDismissBoxValue.StartToEnd -> { hide(); true }
             SwipeToDismissBoxValue.EndToStart -> { del(); true }
             else -> false
         }
@@ -159,47 +204,66 @@ fun SwipeLinkItem(
         backgroundContent = {
             val dir = state.dismissDirection
             val c by animateColorAsState(
-                when (dir) { SwipeToDismissBoxValue.StartToEnd -> Color(0xFFFF729A); SwipeToDismissBoxValue.EndToStart -> Color(0xFFE5484D); else -> Color.Transparent }, label = "swipeBg"
+                when (dir) { SwipeToDismissBoxValue.StartToEnd -> Color(0xFF5B8DEF); SwipeToDismissBoxValue.EndToStart -> Color(0xFFE5484D); else -> Color.Transparent }, label = "swipeBg"
             )
             Box(
                 Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).background(c).padding(horizontal = 24.dp),
                 contentAlignment = if (dir == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
             ) {
-                if (dir == SwipeToDismissBoxValue.StartToEnd) Icon(if (link.isFavorite) Icons.Default.FavoriteBorder else Icons.Default.Favorite, "Favoritar", tint = Color.White)
-                else if (dir == SwipeToDismissBoxValue.EndToStart) Icon(Icons.Default.Delete, "Excluir", tint = Color.White)
+                if (dir == SwipeToDismissBoxValue.StartToEnd) Icon(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Ocultar", tint = Color.White)
+                else if (dir == SwipeToDismissBoxValue.EndToStart) Icon(Icons.Default.Delete, "Apagar", tint = Color.White)
             }
         }
-    ) { LinkCard(link, p, fs, opening, onOpen, onToggleFav, onDelete, onEdit) }
+    ) { LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen, onToggleFav, onDelete, onEdit, onHide, onSummarize) }
 }
 
 @Composable
 private fun LinkCard(
-    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean,
-    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit
+    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
+    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
 ) {
     val src = remember { MutableInteractionSource() }
     val sc by animateFloatAsState(if (opening) 1.05f else 1f, spring(stiffness = 400f), label = "open")
     var menu by remember { mutableStateOf(false) }
     val d = domainOf(link.url)
+    val banner = grid || size == CardSize.LARGE
+    val moreMenu: @Composable () -> Unit = {
+        Box {
+            Icon(Icons.Default.MoreVert, "Mais opções", tint = p.muted, modifier = Modifier.clip(CircleShape).clickable { menu = true }.padding(6.dp))
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = p.dialog) {
+                if (link.summary.isBlank()) DropdownMenuItem(text = { Text("Resumir com IA", color = p.text) }, leadingIcon = { Icon(Icons.Default.AutoAwesome, null, tint = p.accent) }, onClick = { menu = false; onSummarize() })
+                DropdownMenuItem(text = { Text("Editar", color = p.text) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = p.muted) }, onClick = { menu = false; onEdit() })
+                DropdownMenuItem(text = { Text(if (hiddenMode) "Mostrar" else "Ocultar", color = p.text) }, leadingIcon = { Icon(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = p.muted) }, onClick = { menu = false; onHide() })
+                DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) }, onClick = { menu = false; onDelete() })
+            }
+        }
+    }
     GlassSurface(
         p, RoundedCornerShape(22.dp),
         Modifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(RoundedCornerShape(22.dp))
             .clickable(interactionSource = src, indication = LocalIndication.current, onClick = onOpen)
     ) {
-        Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Favicon(d, 48.dp)
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text("$d · ${relTime(link.savedAt)}", color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(link.title.ifBlank { d }, color = p.text, fontSize = fs(15), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-                if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+        Column {
+            if (banner) {
+                val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 100.dp; CardSize.LARGE -> 140.dp } else 160.dp
+                Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp), iconSize = if (h < 90.dp) 26.dp else 40.dp, corner = 16.dp)
             }
-            AnimatedHeart(link.isFavorite, p.muted, onToggleFav)
-            Box {
-                Icon(Icons.Default.MoreVert, "Mais opções", tint = p.muted, modifier = Modifier.clip(CircleShape).clickable { menu = true }.padding(6.dp))
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = p.dialog) {
-                    DropdownMenuItem(text = { Text("Editar", color = p.text) }, leadingIcon = { Icon(Icons.Default.Edit, null, tint = p.muted) }, onClick = { menu = false; onEdit() })
-                    DropdownMenuItem(text = { Text("Excluir", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) }, onClick = { menu = false; onDelete() })
+            Row(Modifier.padding(start = 12.dp, top = if (banner) 2.dp else 12.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
+                if (!banner) {
+                    val s = if (size == CardSize.SMALL) 52.dp else 84.dp
+                    Thumb(link, Modifier.size(s), iconSize = if (size == CardSize.SMALL) 26.dp else 36.dp)
+                    Spacer(Modifier.width(12.dp))
                 }
+                Column(Modifier.weight(1f)) {
+                    Text("$d · ${relTime(link.savedAt)}", color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(link.title.ifBlank { d }, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+                    SummaryBlock(link, p, fs, summarizing, onSummarize)
+                    if (grid) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                        AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu()
+                    }
+                }
+                if (!grid) { AnimatedHeart(link.isFavorite, p.muted, onToggleFav); moreMenu() }
             }
         }
     }

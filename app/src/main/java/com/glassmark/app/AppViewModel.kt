@@ -38,7 +38,7 @@ import kotlinx.coroutines.tasks.await
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("glassmark", Context.MODE_PRIVATE)
     private val db = Room.databaseBuilder(app, GlassmarkDatabase::class.java, "glassmark.db")
-        .addMigrations(MIGRATION_1_2).build()
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     private val repo = Repository(db)
     private val auth = FirebaseAuth.getInstance()
 
@@ -49,6 +49,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val amoledInDark = MutableStateFlow(prefs.getBoolean("amoled_in_dark", false))
     val appFont = MutableStateFlow(AppFont.fromKey(prefs.getString("app_font", null)))
     val textScale = MutableStateFlow(TextScale.fromKey(prefs.getString("text_scale", null)))
+    val gridView = MutableStateFlow(prefs.getBoolean("grid_view", false))
+    val cardSize = MutableStateFlow(CardSize.fromKey(prefs.getString("card_size", null)))
+    val hiddenCollections = MutableStateFlow(prefs.getStringSet("hidden_collections", emptySet())?.toSet() ?: emptySet())
+    val summarizing = MutableStateFlow<Set<String>>(emptySet())
+    val aiMessage = MutableStateFlow<String?>(null)
+    private val ogTried = HashSet<String>()
+    private val ogGate = kotlinx.coroutines.sync.Semaphore(3)
     val guest = MutableStateFlow(prefs.getBoolean("guest", false))
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)       // erro/aviso nas telas de login
@@ -105,6 +112,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setThemeMode(mode: ThemeMode) { themeMode.value = mode; prefs.edit().putString("theme_mode", mode.key).apply() }
     fun setAmoledInDark(v: Boolean) { amoledInDark.value = v; prefs.edit().putBoolean("amoled_in_dark", v).apply() }
     fun setAppFont(f: AppFont) { appFont.value = f; prefs.edit().putString("app_font", f.key).apply() }
+    fun setGridView(v: Boolean) { gridView.value = v; prefs.edit().putBoolean("grid_view", v).apply() }
+    fun setCardSize(s: CardSize) { cardSize.value = s; prefs.edit().putString("card_size", s.key).apply() }
+    private fun saveHidden(s: Set<String>) { hiddenCollections.value = s; prefs.edit().putStringSet("hidden_collections", s).apply() }
+    fun hideCollection(name: String) = saveHidden(hiddenCollections.value + name)
+    fun unhideCollection(name: String) = saveHidden(hiddenCollections.value - name)
+    fun setLinkHidden(link: LinkEntity, v: Boolean) { viewModelScope.launch { repo.setField(ownerUid.value, link.docId, "hidden", v, ::report) } }
+
+    /** Busca a imagem de prévia (og:image) uma vez por link; "-" marca que não há imagem. */
+    fun fetchOg(link: LinkEntity) {
+        if (link.ogImage.isNotEmpty() || !ogTried.add(link.docId)) return
+        viewModelScope.launch {
+            ogGate.acquire()
+            try {
+                val img = PageFetcher.fetch(link.url)?.ogImage ?: "-"
+                repo.setField(ownerUid.value, link.docId, "ogImage", img, ::report)
+            } finally { ogGate.release() }
+        }
+    }
+
+    fun summarize(link: LinkEntity) {
+        if (link.docId in summarizing.value) return
+        summarizing.value = summarizing.value + link.docId
+        viewModelScope.launch {
+            try {
+                val info = PageFetcher.fetch(link.url)
+                if (info == null) { aiMessage.value = "Não consegui abrir a página para resumir."; return@launch }
+                AiSummary.summarize(link.url, info)
+                    .onSuccess { repo.setField(ownerUid.value, link.docId, "summary", it, ::report) }
+                    .onFailure { aiMessage.value = it.message }
+            } finally { summarizing.value = summarizing.value - link.docId }
+        }
+    }
+
     fun setTextScale(scale: TextScale) { textScale.value = scale; prefs.edit().putString("text_scale", scale.key).apply() }
     fun saveCustomAvatar(uri: String?) { customAvatarUri.value = uri; prefs.edit().putString("custom_avatar_uri", uri).apply() }
 
@@ -198,8 +238,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun addCollection(name: String) { viewModelScope.launch { repo.addCollection(ownerUid.value, name, ::report) } }
     fun toggleFavorite(link: LinkEntity) { viewModelScope.launch { repo.toggleFavorite(ownerUid.value, link, ::report) } }
     fun updateLink(link: LinkEntity) { viewModelScope.launch { repo.updateLink(ownerUid.value, link, ::report) } }
-    fun renameCollection(old: String, new: String) { viewModelScope.launch { repo.renameCollection(ownerUid.value, old, new, ::report) } }
-    fun deleteCollection(name: String) { viewModelScope.launch { repo.deleteCollection(ownerUid.value, name, ::report) } }
+    fun renameCollection(old: String, new: String) { if (old in hiddenCollections.value) saveHidden(hiddenCollections.value - old + new); viewModelScope.launch { repo.renameCollection(ownerUid.value, old, new, ::report) } }
+    fun deleteCollection(name: String) { if (name in hiddenCollections.value) unhideCollection(name); viewModelScope.launch { repo.deleteCollection(ownerUid.value, name, ::report) } }
     fun deleteLink(link: LinkEntity) { viewModelScope.launch { repo.deleteLink(ownerUid.value, link, ::report) } }
 
     fun uploadGuest() {
