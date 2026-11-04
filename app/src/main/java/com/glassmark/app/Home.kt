@@ -396,6 +396,53 @@ fun CardMenuOverlay(p: Palette, fs: (Int) -> TextUnit, progress: Float, closing:
 }
 
 @Composable
+private fun LinkCard(
+    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
+    onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier
+) {
+    val src = remember { MutableInteractionSource() }
+    val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
+    val d = domainOf(link.url)
+    val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
+    val banner = hasOg && (grid || size == CardSize.LARGE)
+    val sideThumb = hasOg && !banner
+    val shape = RoundedCornerShape(18.dp)
+    val title = link.title.ifBlank { d }
+    val meta = "$d · ${relTime(link.savedAt)}"
+    val pink = Color(0xFFFF729A)
+    GlassSurface(
+        p, shape,
+        cardModifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
+            .combinedClickable(
+                interactionSource = src, indication = LocalIndication.current, onClick = onOpen,
+                onLongClick = onLongPress
+            )
+    ) {
+        Column {
+            if (banner) {
+                val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
+                Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
+            }
+            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = if (banner) 4.dp else 14.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
+                if (sideThumb) {
+                    Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp))
+                    Spacer(Modifier.width(12.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.Bold, maxLines = if (grid) 3 else 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (link.isFavorite) Text(" · Favorito", color = pink, fontSize = fs(11), maxLines = 1)
+                    }
+                    if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+                    SummaryBlock(link, p, fs, summarizing)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun GlassBar(
     p: Palette, fs: (Int) -> TextUnit, selected: String, modifier: Modifier = Modifier,
     onHome: () -> Unit, onFavs: () -> Unit, onSearch: () -> Unit, onSettings: () -> Unit
