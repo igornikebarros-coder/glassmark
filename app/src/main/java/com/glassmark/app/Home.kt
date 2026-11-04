@@ -42,6 +42,10 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.horizontalScroll
 
 fun domainOf(url: String): String =
     runCatching { Uri.parse(url).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotBlank() } ?: url
@@ -270,18 +274,139 @@ fun SwipeLinkItem(
                 }
             }
         }
-    ) { LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen, onToggleFav, onDelete, onEdit, onHide, onSummarize) }
+    ) {
+        var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+        var menu by remember { mutableStateOf(false) }
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+        Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow() }.graphicsLayer { alpha = if (menu) 0f else 1f }) {
+            LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen,
+                onLongPress = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true })
+        }
+        if (menu) CardContextMenu(link, p, fs, bounds, hiddenMode, onDismiss = { menu = false },
+            card = { LinkCard(link, p, fs, false, grid, size, summarizing, hiddenMode, onOpen = {}, onLongPress = null) },
+            onOpen = onOpen, onToggleFav = onToggleFav, onDelete = onDelete, onEdit = onEdit, onHide = onHide, onSummarize = onSummarize)
+    }
+}
+
+private class MenuAction(val icon: ImageVector, val label: String, val danger: Boolean = false, val run: () -> Unit)
+
+/** Menu de contexto estilo iOS: fundo desfocado/escurecido, card ampliado no lugar e bolha flutuante com ações. */
+@Composable
+private fun CardContextMenu(
+    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, bounds: androidx.compose.ui.geometry.Rect, hiddenMode: Boolean,
+    onDismiss: () -> Unit, card: @Composable () -> Unit,
+    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val prog = remember { androidx.compose.animation.core.Animatable(0f) }
+    var closing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { prog.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f)) }
+    fun close(after: () -> Unit = {}) {
+        if (closing) return
+        closing = true
+        scope.launch { prog.animateTo(0f, androidx.compose.animation.core.tween(170)); onDismiss(); after() }
+    }
+    val actions = buildList {
+        add(MenuAction(Icons.Default.OpenInNew, "Abrir") { onOpen() })
+        add(MenuAction(Icons.Default.Share, "Compartilhar") {
+            val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, link.url)
+                if (link.title.isNotBlank()) putExtra(android.content.Intent.EXTRA_SUBJECT, link.title)
+            }
+            ctx.startActivity(android.content.Intent.createChooser(i, "Compartilhar link"))
+        })
+        add(MenuAction(if (link.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (link.isFavorite) "Desfavoritar" else "Favoritar") { onToggleFav() })
+        if (link.summary.isBlank()) add(MenuAction(Icons.Default.AutoAwesome, "Resumir") { onSummarize() })
+        add(MenuAction(Icons.Default.Edit, "Editar") { onEdit() })
+        add(MenuAction(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, if (hiddenMode) "Mostrar" else "Ocultar") { onHide() })
+        add(MenuAction(Icons.Default.Delete, "Apagar", danger = true) { onDelete() })
+    }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { close() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        SideEffect {
+            window?.let { w ->
+                w.setDimAmount(0f)
+                w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                w.setWindowAnimations(0)
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    w.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    w.attributes = w.attributes.apply { blurBehindRadius = 48 }
+                }
+            }
+        }
+        val blurOk = android.os.Build.VERSION.SDK_INT >= 31
+        BoxWithConstraints(
+            Modifier.fillMaxSize()
+                .graphicsLayer { alpha = prog.value.coerceIn(0f, 1f) }
+                .background(Color.Black.copy(alpha = if (blurOk) (if (p.dark) .45f else .28f) else (if (p.dark) .7f else .5f)))
+                .pointerInput(Unit) { detectTapGestures { close() } }
+        ) {
+            val screenH = with(density) { maxHeight.toPx() }
+            val screenW = with(density) { maxWidth.toPx() }
+            val pad = with(density) { 12.dp.toPx() }
+            val bubbleH = with(density) { 84.dp.toPx() }
+            val topSafe = with(density) { 40.dp.toPx() }
+            val grow = 1.04f
+            val extra = bounds.height * (grow - 1f) / 2f
+            val above = bounds.top - extra - pad - bubbleH > topSafe
+            val bubbleY = (if (above) bounds.top - extra - pad - bubbleH else bounds.bottom + extra + pad)
+                .coerceIn(topSafe, (screenH - bubbleH - pad).coerceAtLeast(topSafe))
+            val t = prog.value
+            // Card em foco, ampliado no mesmo lugar
+            Box(
+                Modifier.offset { androidx.compose.ui.unit.IntOffset(bounds.left.toInt(), bounds.top.toInt()) }
+                    .width(with(density) { bounds.width.toDp() })
+                    .graphicsLayer { val s = 1f + (grow - 1f) * t; scaleX = s; scaleY = s; shadowElevation = 24f * t; shape = RoundedCornerShape(18.dp); clip = true }
+                    .pointerInput(Unit) { detectTapGestures { close(onOpen) } }
+            ) { card() }
+            // Bolha de ações
+            Surface(
+                color = p.dialog, shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, p.stroke), shadowElevation = 12.dp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset { androidx.compose.ui.unit.IntOffset(0, bubbleY.toInt()) }
+                    .widthIn(max = maxWidth - 24.dp)
+                    .graphicsLayer {
+                        val s = .6f + .4f * t; scaleX = s; scaleY = s
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (above) 1f else 0f)
+                    }
+                    .pointerInput(Unit) { detectTapGestures { } }
+            ) {
+                Row(
+                    Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 8.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    actions.forEach { a ->
+                        val tint = if (a.danger) p.error else p.text
+                        Column(
+                            Modifier.width(58.dp).clip(RoundedCornerShape(14.dp)).clickable { close(a.run) }.padding(vertical = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(Modifier.size(42.dp).clip(CircleShape).background(if (a.danger) p.error.copy(alpha = .14f) else p.text.copy(alpha = .08f)), contentAlignment = Alignment.Center) {
+                                Icon(a.icon, a.label, tint = tint, modifier = Modifier.size(20.dp))
+                            }
+                            Text(a.label, color = tint, fontSize = fs(10), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun LinkCard(
     link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
-    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
+    onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier
 ) {
     val src = remember { MutableInteractionSource() }
     val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
-    var menu by remember { mutableStateOf(false) }
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val d = domainOf(link.url)
     val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
     val banner = hasOg && (grid || size == CardSize.LARGE)
@@ -292,22 +417,13 @@ private fun LinkCard(
     val pink = Color(0xFFFF729A)
     GlassSurface(
         p, shape,
-        Modifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
+        cardModifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
             .combinedClickable(
                 interactionSource = src, indication = LocalIndication.current, onClick = onOpen,
-                onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true }
+                onLongClick = onLongPress
             )
     ) {
         Column {
-            Box {
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = p.dialog) {
-                    DropdownMenuItem(text = { Text(if (link.isFavorite) "Remover dos favoritos" else "Favoritar", color = p.text) }, onClick = { menu = false; onToggleFav() })
-                    if (link.summary.isBlank()) DropdownMenuItem(text = { Text("Resumir com IA", color = p.text) }, onClick = { menu = false; onSummarize() })
-                    DropdownMenuItem(text = { Text("Editar", color = p.text) }, onClick = { menu = false; onEdit() })
-                    DropdownMenuItem(text = { Text(if (hiddenMode) "Mostrar" else "Ocultar", color = p.text) }, onClick = { menu = false; onHide() })
-                    DropdownMenuItem(text = { Text("Apagar", color = p.error) }, onClick = { menu = false; onDelete() })
-                }
-            }
             if (banner) {
                 val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
                 Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
