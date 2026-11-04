@@ -46,6 +46,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.layout.positionInWindow
 
 fun domainOf(url: String): String =
     runCatching { Uri.parse(url).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotBlank() } ?: url
@@ -277,39 +279,44 @@ fun SwipeLinkItem(
     ) {
         var bounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
         var menu by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { snapshotFlow { CardMenu.req }.collect { if (it == null) menu = false } }
         val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-        Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow() }.graphicsLayer { alpha = if (menu) 0f else 1f }) {
+        Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow() }.graphicsLayer { alpha = if (menu && CardMenu.req != null) 0f else 1f }) {
             LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen,
                 onLongPress = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true })
         }
-        if (menu) CardContextMenu(link, p, fs, bounds, hiddenMode, onDismiss = { menu = false },
-            card = { LinkCard(link, p, fs, false, grid, size, summarizing, hiddenMode, onOpen = {}, onLongPress = null) },
-            onOpen = onOpen, onToggleFav = onToggleFav, onDelete = onDelete, onEdit = onEdit, onHide = onHide, onSummarize = onSummarize)
+        if (menu) {
+            CardMenu.req = CardMenuReq(link, bounds, hiddenMode,
+                card = { LinkCard(link, p, fs, false, grid, size, summarizing, hiddenMode, onOpen = {}, onLongPress = null) },
+                onOpen = onOpen, onToggleFav = onToggleFav, onDelete = onDelete, onEdit = onEdit, onHide = onHide, onSummarize = onSummarize,
+                onClosed = { menu = false })
+        }
     }
 }
 
 private class MenuAction(val icon: ImageVector, val label: String, val danger: Boolean = false, val run: () -> Unit)
 
-/** Menu de contexto estilo iOS: fundo desfocado/escurecido, card ampliado no lugar e bolha flutuante com ações. */
+class CardMenuReq(
+    val link: LinkEntity, val bounds: androidx.compose.ui.geometry.Rect, val hiddenMode: Boolean, val card: @Composable () -> Unit,
+    val onOpen: () -> Unit, val onToggleFav: () -> Unit, val onDelete: () -> Unit, val onEdit: () -> Unit, val onHide: () -> Unit, val onSummarize: () -> Unit,
+    val onClosed: () -> Unit
+)
+
+object CardMenu { var req by mutableStateOf<CardMenuReq?>(null) }
+
+/** Menu de contexto estilo iOS desenhado na mesma hierarquia: scrim + card em foco ampliado + bolha de ações. */
 @Composable
-private fun CardContextMenu(
-    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, bounds: androidx.compose.ui.geometry.Rect, hiddenMode: Boolean,
-    onDismiss: () -> Unit, card: @Composable () -> Unit,
-    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
-) {
+fun CardMenuOverlay(p: Palette, fs: (Int) -> TextUnit, progress: Float, closing: Boolean, onClose: (after: () -> Unit) -> Unit) {
+    val r = CardMenu.req ?: return
+    val link = r.link
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val prog = remember { androidx.compose.animation.core.Animatable(0f) }
-    var closing by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { prog.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 420f)) }
-    fun close(after: () -> Unit = {}) {
-        if (closing) return
-        closing = true
-        scope.launch { prog.animateTo(0f, androidx.compose.animation.core.tween(170)); onDismiss(); after() }
-    }
+    var origin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var showSummary by remember(r) { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler { onClose {} }
+    val close: (() -> Unit) -> Unit = { if (!closing) onClose(it) }
     val actions = buildList {
-        add(MenuAction(Icons.Default.OpenInNew, "Abrir") { onOpen() })
+        add(MenuAction(Icons.Default.OpenInNew, "Abrir") { r.onOpen() })
         add(MenuAction(Icons.Default.Share, "Compartilhar") {
             val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, link.url)
@@ -317,75 +324,59 @@ private fun CardContextMenu(
             }
             ctx.startActivity(android.content.Intent.createChooser(i, "Compartilhar link"))
         })
-        add(MenuAction(if (link.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (link.isFavorite) "Desfavoritar" else "Favoritar") { onToggleFav() })
-        if (link.summary.isBlank()) add(MenuAction(Icons.Default.AutoAwesome, "Resumir") { onSummarize() })
-        add(MenuAction(Icons.Default.Edit, "Editar") { onEdit() })
-        add(MenuAction(if (hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, if (hiddenMode) "Mostrar" else "Ocultar") { onHide() })
-        add(MenuAction(Icons.Default.Delete, "Apagar", danger = true) { onDelete() })
+        add(MenuAction(if (link.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (link.isFavorite) "Desfavoritar" else "Favoritar") { r.onToggleFav() })
+        add(MenuAction(Icons.Default.AutoAwesome, if (link.summary.isBlank()) "Resumir" else "Resumo") { r.onSummarize() })
+        add(MenuAction(Icons.Default.Edit, "Editar") { r.onEdit() })
+        add(MenuAction(if (r.hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, if (r.hiddenMode) "Mostrar" else "Ocultar") { r.onHide() })
+        add(MenuAction(Icons.Default.Delete, "Apagar", danger = true) { r.onDelete() })
     }
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = { close() },
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    val t = progress
+    val scrimA = if (p.dark) .55f else .30f
+    BoxWithConstraints(
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { origin = it.positionInWindow() }
+            .background(Color.Black.copy(alpha = scrimA * t.coerceIn(0f, 1f)))
+            .pointerInput(r) { detectTapGestures { close {} } }
     ) {
-        val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
-        SideEffect {
-            window?.let { w ->
-                w.setDimAmount(0f)
-                w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-                w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-                w.setWindowAnimations(0)
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    w.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    w.attributes = w.attributes.apply { blurBehindRadius = 48 }
+        val screenH = with(density) { maxHeight.toPx() }
+        val pad = with(density) { 14.dp.toPx() }
+        val bubbleH = with(density) { 84.dp.toPx() }
+        val topSafe = with(density) { 44.dp.toPx() }
+        val grow = 1.06f
+        val left = r.bounds.left - origin.x
+        val top = r.bounds.top - origin.y
+        val bottom = r.bounds.bottom - origin.y
+        val extra = r.bounds.height * (grow - 1f) / 2f
+        val above = top - extra - pad - bubbleH > topSafe
+        val bubbleY = (if (above) top - extra - pad - bubbleH else bottom + extra + pad)
+            .coerceIn(topSafe, (screenH - bubbleH - pad).coerceAtLeast(topSafe))
+        Box(
+            Modifier.offset { androidx.compose.ui.unit.IntOffset(left.toInt(), top.toInt()) }
+                .width(with(density) { r.bounds.width.toDp() })
+                .graphicsLayer { val s = 1f + (grow - 1f) * t; scaleX = s; scaleY = s; shadowElevation = with(density) { 22.dp.toPx() } * t.coerceIn(0f, 1f); shape = RoundedCornerShape(18.dp); clip = false }
+                .pointerInput(r) { detectTapGestures { close(r.onOpen) } }
+        ) { r.card() }
+        Column(
+            Modifier.align(Alignment.TopCenter)
+                .offset { androidx.compose.ui.unit.IntOffset(0, bubbleY.toInt()) }
+                .widthIn(max = maxWidth - 24.dp)
+                .graphicsLayer {
+                    val s = .6f + .4f * t; scaleX = s; scaleY = s; alpha = t.coerceIn(0f, 1f)
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (above) 1f else 0f)
                 }
-            }
-        }
-        val blurOk = android.os.Build.VERSION.SDK_INT >= 31
-        BoxWithConstraints(
-            Modifier.fillMaxSize()
-                .graphicsLayer { alpha = prog.value.coerceIn(0f, 1f) }
-                .background(Color.Black.copy(alpha = if (blurOk) (if (p.dark) .45f else .28f) else (if (p.dark) .7f else .5f)))
-                .pointerInput(Unit) { detectTapGestures { close() } }
+                .pointerInput(r) { detectTapGestures { } }
         ) {
-            val screenH = with(density) { maxHeight.toPx() }
-            val screenW = with(density) { maxWidth.toPx() }
-            val pad = with(density) { 12.dp.toPx() }
-            val bubbleH = with(density) { 84.dp.toPx() }
-            val topSafe = with(density) { 40.dp.toPx() }
-            val grow = 1.04f
-            val extra = bounds.height * (grow - 1f) / 2f
-            val above = bounds.top - extra - pad - bubbleH > topSafe
-            val bubbleY = (if (above) bounds.top - extra - pad - bubbleH else bounds.bottom + extra + pad)
-                .coerceIn(topSafe, (screenH - bubbleH - pad).coerceAtLeast(topSafe))
-            val t = prog.value
-            // Card em foco, ampliado no mesmo lugar
-            Box(
-                Modifier.offset { androidx.compose.ui.unit.IntOffset(bounds.left.toInt(), bounds.top.toInt()) }
-                    .width(with(density) { bounds.width.toDp() })
-                    .graphicsLayer { val s = 1f + (grow - 1f) * t; scaleX = s; scaleY = s; shadowElevation = 24f * t; shape = RoundedCornerShape(18.dp); clip = true }
-                    .pointerInput(Unit) { detectTapGestures { close(onOpen) } }
-            ) { card() }
-            // Bolha de ações
-            Surface(
-                color = p.dialog, shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, p.stroke), shadowElevation = 12.dp,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset { androidx.compose.ui.unit.IntOffset(0, bubbleY.toInt()) }
-                    .widthIn(max = maxWidth - 24.dp)
-                    .graphicsLayer {
-                        val s = .6f + .4f * t; scaleX = s; scaleY = s
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, if (above) 1f else 0f)
-                    }
-                    .pointerInput(Unit) { detectTapGestures { } }
-            ) {
+            Surface(color = p.dialog, shape = RoundedCornerShape(26.dp), border = BorderStroke(1.dp, p.stroke), shadowElevation = 12.dp) {
                 Row(
                     Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 8.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     actions.forEach { a ->
                         val tint = if (a.danger) p.error else p.text
+                        val isResumo = a.label == "Resumo"
                         Column(
-                            Modifier.width(58.dp).clip(RoundedCornerShape(14.dp)).clickable { close(a.run) }.padding(vertical = 2.dp),
+                            Modifier.width(58.dp).clip(RoundedCornerShape(14.dp))
+                                .clickable { if (isResumo) showSummary = !showSummary else close(a.run) }.padding(vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(Modifier.size(42.dp).clip(CircleShape).background(if (a.danger) p.error.copy(alpha = .14f) else p.text.copy(alpha = .08f)), contentAlignment = Alignment.Center) {
@@ -396,52 +387,9 @@ private fun CardContextMenu(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun LinkCard(
-    link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
-    onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier
-) {
-    val src = remember { MutableInteractionSource() }
-    val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
-    val d = domainOf(link.url)
-    val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
-    val banner = hasOg && (grid || size == CardSize.LARGE)
-    val sideThumb = hasOg && !banner
-    val shape = RoundedCornerShape(18.dp)
-    val title = link.title.ifBlank { d }
-    val meta = "$d · ${relTime(link.savedAt)}"
-    val pink = Color(0xFFFF729A)
-    GlassSurface(
-        p, shape,
-        cardModifier.fillMaxWidth().graphicsLayer { scaleX = sc; scaleY = sc }.pressScale(src, 0.98f).clip(shape)
-            .combinedClickable(
-                interactionSource = src, indication = LocalIndication.current, onClick = onOpen,
-                onLongClick = onLongPress
-            )
-    ) {
-        Column {
-            if (banner) {
-                val h = if (grid) when (size) { CardSize.SMALL -> 70.dp; CardSize.MEDIUM -> 96.dp; CardSize.LARGE -> 130.dp } else 150.dp
-                Thumb(link, Modifier.fillMaxWidth().height(h).padding(8.dp))
-            }
-            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = if (banner) 4.dp else 14.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
-                if (sideThumb) {
-                    Thumb(link, Modifier.size(if (size == CardSize.SMALL) 56.dp else 72.dp))
-                    Spacer(Modifier.width(12.dp))
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = p.text, fontSize = fs(if (grid) 13 else 15), fontWeight = FontWeight.Bold, maxLines = if (grid) 3 else 2, overflow = TextOverflow.Ellipsis)
-                    Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(meta, color = p.muted, fontSize = fs(11), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        if (link.isFavorite) Text(" · Favorito", color = pink, fontSize = fs(11), maxLines = 1)
-                    }
-                    if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
-                    SummaryBlock(link, p, fs, summarizing)
-                }
+            if (showSummary) Surface(color = p.dialog, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, p.stroke), shadowElevation = 12.dp, modifier = Modifier.padding(top = 8.dp)) {
+                Text(link.summary, color = p.text, fontSize = fs(13), lineHeight = fs(19),
+                    modifier = Modifier.heightIn(max = 260.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(16.dp))
             }
         }
     }

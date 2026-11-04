@@ -268,7 +268,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        val blurRadius by animateDpAsState(if (showAdd || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null) 16.dp else 0.dp, tween(250), label = "blur")
+        val blurRadius by animateDpAsState(if (showAdd || renameTarget != null || deleteTarget != null || editLinkTarget != null || deleteLinkTarget != null || CardMenu.req != null) 16.dp else 0.dp, tween(250), label = "blur")
         Box(Modifier.fillMaxSize().blur(blurRadius).background(Brush.verticalGradient(p.gradient))) {
             Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp).nestedScroll(barConn)) {
                 Spacer(Modifier.height(14.dp))
@@ -437,6 +437,15 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 containerColor = accent, contentColor = onAccentOf(p), shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = 20.dp)
             )
+        }
+        val cmScope = rememberCoroutineScope()
+        val cmProg = remember { androidx.compose.animation.core.Animatable(0f) }
+        var cmClosing by remember { mutableStateOf(false) }
+        val cmReq = CardMenu.req
+        LaunchedEffect(cmReq) { if (cmReq != null) { cmClosing = false; cmProg.snapTo(0f); cmProg.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.72f, stiffness = 420f)) } }
+        CardMenuOverlay(p, font, cmProg.value, cmClosing) { after ->
+            if (!cmClosing) { cmClosing = true
+                cmScope.launch { cmProg.animateTo(0f, tween(170)); val r = CardMenu.req; CardMenu.req = null; r?.onClosed?.invoke(); after() } }
         }
         if (openFade > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = openFade }.background(canvas))
         renameTarget?.let { old ->
