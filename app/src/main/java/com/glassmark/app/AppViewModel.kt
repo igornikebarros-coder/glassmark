@@ -38,8 +38,8 @@ import kotlinx.coroutines.tasks.await
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("glassmark", Context.MODE_PRIVATE)
-    private val db = Room.databaseBuilder(app, GlassmarkDatabase::class.java, "glassmark.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+    private val db = AppDb.get(app)
+    private val appCtx = app.applicationContext
     private val repo = Repository(db)
     private val auth = FirebaseAuth.getInstance()
 
@@ -64,11 +64,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val offerUpload = MutableStateFlow(false)
     val guestCount = MutableStateFlow(0)
     val linksLoaded = MutableStateFlow(false)
+    val inAppBrowser = MutableStateFlow(prefs.getBoolean("in_app_browser", true))
+    val appLock = MutableStateFlow(prefs.getBoolean("app_lock", false))
+    val lockedTabs = MutableStateFlow(prefs.getStringSet("locked_tabs", emptySet())?.toSet() ?: emptySet())
+    val widgetFavorites = MutableStateFlow(prefs.getBoolean("widget_favorites", false))
+    /** Ação vinda de atalho do app: "save" ou "search". */
+    val pendingAction = MutableStateFlow<String?>(null)
+    fun setInAppBrowser(v: Boolean) { inAppBrowser.value = v; prefs.edit().putBoolean("in_app_browser", v).apply() }
+    fun setAppLock(v: Boolean) { appLock.value = v; prefs.edit().putBoolean("app_lock", v).apply() }
+    fun toggleTabLock(name: String) { val s = if (name in lockedTabs.value) lockedTabs.value - name else lockedTabs.value + name; lockedTabs.value = s; prefs.edit().putStringSet("locked_tabs", s).apply() }
+    fun setWidgetFavorites(v: Boolean) { widgetFavorites.value = v; prefs.edit().putBoolean("widget_favorites", v).apply(); LinkWidget.refresh(appCtx) }
+    fun findDuplicate(url: String): LinkEntity? { val n = normalizeUrl(url); return links.value.firstOrNull { normalizeUrl(it.url) == n } }
+    fun markRead(link: LinkEntity, v: Boolean = true) { if (link.isRead == v) return; viewModelScope.launch { repo.setField(ownerUid.value, link.docId, "isRead", v, ::report) } }
+    fun setReminder(link: LinkEntity, at: Long) {
+        if (at > 0) Reminders.schedule(appCtx, link, at) else Reminders.cancel(appCtx, link)
+        viewModelScope.launch { repo.setField(ownerUid.value, link.docId, "remindAt", at, ::report) }
+    }
+    fun exportJson(): String = Backup.toJson(links.value)
+    /** Importa sem duplicar (URL normalizada). Retorna quantos entraram. */
+    fun importLinks(items: List<LinkEntity>, onDone: (Int) -> Unit) {
+        val uid = ownerUid.value
+        val seen = links.value.map { normalizeUrl(it.url) }.toMutableSet()
+        val fresh = items.filter { seen.add(normalizeUrl(it.url)) }.map { it.copy(ownerUid = uid) }
+        viewModelScope.launch { fresh.forEach { repo.updateLink(uid, it, ::report) }; onDone(fresh.size) }
+    }
 
     private val ownerUid: StateFlow<String> = user.map { it?.uid.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, auth.currentUser?.uid.orEmpty())
 
-    val links: StateFlow<List<LinkEntity>> = ownerUid.flatMapLatest { repo.observeLinks(it).onEach { linksLoaded.value = true } }
+    val links: StateFlow<List<LinkEntity>> = ownerUid.flatMapLatest { repo.observeLinks(it).onEach { linksLoaded.value = true; LinkWidget.refresh(appCtx) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val collections: StateFlow<List<String>> = ownerUid.flatMapLatest { uid ->

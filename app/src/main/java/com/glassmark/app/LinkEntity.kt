@@ -18,12 +18,17 @@ data class LinkEntity(
     @ColumnInfo(defaultValue = "") val ownerUid: String = "",
     @ColumnInfo(defaultValue = "") val ogImage: String = "",
     @ColumnInfo(defaultValue = "") val summary: String = "",
-    @ColumnInfo(defaultValue = "0") val hidden: Boolean = false
+    @ColumnInfo(defaultValue = "0") val hidden: Boolean = false,
+    @ColumnInfo(defaultValue = "") val tags: String = "",
+    @ColumnInfo(defaultValue = "0") val isRead: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val remindAt: Long = 0
 ) {
+    fun tagList(): List<String> = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     fun toMap(): Map<String, Any> = mapOf(
         "url" to url, "title" to title, "collection" to collection,
         "savedAt" to savedAt, "isFavorite" to isFavorite,
-        "ogImage" to ogImage, "summary" to summary, "hidden" to hidden
+        "ogImage" to ogImage, "summary" to summary, "hidden" to hidden,
+        "tags" to tagList(), "isRead" to isRead, "remindAt" to remindAt
     )
 }
 

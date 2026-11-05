@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="save" android:enabled="true" android:icon="@mipmap/ic_link" android:shortcutShortLabel="@string/sc_save">
+        <intent android:action="com.glassmark.link.SAVE" android:targetPackage="com.glassmark.link" android:targetClass="com.glassmark.app.MainActivity"/>
+    </shortcut>
+    <shortcut android:shortcutId="search" android:enabled="true" android:icon="@mipmap/ic_link" android:shortcutShortLabel="@string/sc_search">
+        <intent android:action="com.glassmark.link.SEARCH" android:targetPackage="com.glassmark.link" android:targetClass="com.glassmark.app.MainActivity"/>
+    </shortcut>
+</shortcuts>

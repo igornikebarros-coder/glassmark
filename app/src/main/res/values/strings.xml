@@ -2,4 +2,6 @@
     <string name="app_name">Link</string>
     <!-- Web client ID (OAuth tipo 3) usado no login com Google. -->
     <string name="glassmark_web_client_id" translatable="false"></string>
+    <string name="sc_save">Salvar link</string>
+    <string name="sc_search">Buscar</string>
 </resources>

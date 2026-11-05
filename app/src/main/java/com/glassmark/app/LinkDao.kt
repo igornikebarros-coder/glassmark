@@ -37,6 +37,27 @@ interface LinkDao {
     @Query("UPDATE saved_links SET hidden = :v WHERE ownerUid = :uid AND docId = :docId")
     suspend fun setHidden(uid: String, docId: String, v: Boolean)
 
+    @Query("UPDATE saved_links SET isRead = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setRead(uid: String, docId: String, v: Boolean)
+
+    @Query("UPDATE saved_links SET remindAt = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setRemind(uid: String, docId: String, v: Long)
+
+    @Query("UPDATE saved_links SET title = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setTitle(uid: String, docId: String, v: String)
+
+    @Query("UPDATE saved_links SET collection = :v WHERE ownerUid = :uid AND docId = :docId")
+    suspend fun setCollection(uid: String, docId: String, v: String)
+
+    @Query("SELECT * FROM saved_links WHERE docId = :docId LIMIT 1")
+    suspend fun byDocId(docId: String): LinkEntity?
+
+    @Query("SELECT * FROM saved_links WHERE ownerUid = :uid AND hidden = 0 ORDER BY savedAt DESC LIMIT :n")
+    suspend fun recent(uid: String, n: Int): List<LinkEntity>
+
+    @Query("SELECT * FROM saved_links WHERE ownerUid = :uid AND hidden = 0 AND isFavorite = 1 ORDER BY savedAt DESC LIMIT :n")
+    suspend fun favorites(uid: String, n: Int): List<LinkEntity>
+
     @Query("SELECT COUNT(*) FROM saved_links WHERE ownerUid = ''")
     suspend fun guestCount(): Int
 }

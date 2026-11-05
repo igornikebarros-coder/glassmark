@@ -72,6 +72,9 @@ class Repository(private val db: GlassmarkDatabase) {
                     ogImage = d.getString("ogImage").orEmpty(),
                     summary = d.getString("summary").orEmpty(),
                     hidden = d.getBoolean("hidden") ?: false,
+                    tags = ((d.get("tags") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()).joinToString(","),
+                    isRead = d.getBoolean("isRead") ?: false,
+                    remindAt = d.getLong("remindAt") ?: 0L,
                     docId = d.id,
                     ownerUid = uid
                 )
@@ -93,7 +96,7 @@ class Repository(private val db: GlassmarkDatabase) {
     }
 
     // ---- operações ----
-    suspend fun addLink(uid: String, url: String, title: String, collection: String, onError: (String) -> Unit) {
+    suspend fun addLink(uid: String, url: String, title: String, collection: String, onError: (String) -> Unit): LinkEntity {
         val link = LinkEntity(url = url, title = title, collection = collection.ifBlank { "Inbox" }, ownerUid = uid)
         if (uid.isEmpty()) {
             db.linkDao().insert(link)
@@ -103,6 +106,7 @@ class Repository(private val db: GlassmarkDatabase) {
                 .addOnFailureListener { onError(it.message ?: "erro") }
             addCollection(uid, link.collection, onError)
         }
+        return link
     }
 
     suspend fun addCollection(uid: String, name: String, onError: (String) -> Unit) {
@@ -133,6 +137,10 @@ class Repository(private val db: GlassmarkDatabase) {
             "ogImage" -> db.linkDao().setOg("", docId, value as String)
             "summary" -> db.linkDao().setSummary("", docId, value as String)
             "hidden" -> db.linkDao().setHidden("", docId, value as Boolean)
+            "isRead" -> db.linkDao().setRead("", docId, value as Boolean)
+            "remindAt" -> db.linkDao().setRemind("", docId, value as Long)
+            "title" -> db.linkDao().setTitle("", docId, value as String)
+            "collection" -> { db.linkDao().setCollection("", docId, value as String); db.collectionDao().insert(CollectionEntity("", value)) }
         } else userDoc(uid).collection("links").document(docId).set(mapOf(field to value), SetOptions.merge())
             .addOnFailureListener { onError(it.message ?: "erro") }
     }

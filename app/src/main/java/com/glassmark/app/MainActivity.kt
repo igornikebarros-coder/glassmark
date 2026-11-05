@@ -100,7 +100,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
+    private var unlocked by mutableStateOf(false)
+    private var stoppedAt = 0L
     private val vm: AppViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,12 +120,25 @@ class MainActivity : ComponentActivity() {
                     transitionSpec = { if (Motion.reduced) fadeIn(tween(150)) togetherWith fadeOut(tween(150)) else (fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))) togetherWith fadeOut(tween(160)) },
                     label = "nav"
                 ) { showAuth -> if (showAuth) AuthScreen(vm) else GlassmarkScreen(vm) }
+                val lockOn by vm.appLock.collectAsState()
+                if (lockOn && !unlocked) {
+                    val p = LocalPalette.current
+                    val ask = { biometricUnlock(this@MainActivity, "Desbloquear o Link") { unlocked = true } }
+                    LaunchedEffect(Unit) { ask() }
+                    Column(Modifier.fillMaxSize().background(p.canvas).pointerInput(Unit) { detectTapGestures { } }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Lock, null, tint = p.accent, modifier = Modifier.size(42.dp))
+                        Text("Link bloqueado", color = p.text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 12.dp))
+                        TextButton(onClick = ask) { Text("Desbloquear") }
+                    }
+                }
             }
         }
     }
-    override fun onResume() { super.onResume(); Motion.refresh(this) }
+    override fun onResume() { super.onResume(); Motion.refresh(this); if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) unlocked = false; stoppedAt = 0 }
+    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis() }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleShare(intent) }
     private fun handleShare(intent: Intent?) {
+        when (intent?.action) { "com.glassmark.link.SAVE" -> vm.pendingAction.value = "save"; "com.glassmark.link.SEARCH" -> vm.pendingAction.value = "search" }
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
             val url = Regex("https?://\\S+").find(text)?.value
@@ -146,6 +161,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     var newCollection by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var chipMenu by remember { mutableStateOf<String?>(null) }
     var headerMenu by remember { mutableStateOf(false) }
@@ -170,6 +186,14 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val hiddenCols by vm.hiddenCollections.collectAsState()
     val summarizing by vm.summarizing.collectAsState()
     val aiMsg by vm.aiMessage.collectAsState()
+    val inAppBrowser by vm.inAppBrowser.collectAsState()
+    val appLock by vm.appLock.collectAsState()
+    val lockedTabs by vm.lockedTabs.collectAsState()
+    val widgetFavs by vm.widgetFavorites.collectAsState()
+    val pendingAction by vm.pendingAction.collectAsState()
+    val unlockedTabs = remember { mutableStateListOf<String>() }
+    var editTags by remember { mutableStateOf("") }
+    val notifPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val context = LocalContext.current
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -189,7 +213,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     val dialogSurface = p.dialog
     val accent = p.accent
     val font: (Int) -> TextUnit = { (it * scale.multiplier).sp }
-    val collections = listOf("Todos", "Favoritos") + allCollections.filter { it !in hiddenCols } + (if (collectionFilter == "Ocultos") listOf("Ocultos") else emptyList())
+    val collections = listOf("Todos", "Favoritos", "Não lidos") + allCollections.filter { it !in hiddenCols } + (if (collectionFilter == "Ocultos") listOf("Ocultos") else emptyList())
     val snack = remember { SnackbarHostState() }
     val uiScope = rememberCoroutineScope()
     val searchFocus = remember { FocusRequester() }
@@ -228,7 +252,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
     LaunchedEffect(opening) {
         val id = opening ?: return@LaunchedEffect
         delay(240)
-        links.firstOrNull { it.docId == id }?.let { l -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(l.url))) } }
+        links.firstOrNull { it.docId == id }?.let { l -> openUrl(context, l.url); vm.markRead(l) }
         delay(600)
         opening = null
     }
@@ -253,21 +277,46 @@ private fun GlassmarkScreen(vm: AppViewModel) {
             }
         }
     }
-    val builtIns = setOf("Todos", "Favoritos", "Inbox")
+    val builtIns = setOf("Todos", "Favoritos", "Inbox", "Não lidos")
+    val saveOrWarn: (String, String, String) -> Unit = { url, title, col ->
+        val d = vm.findDuplicate(url)
+        if (d == null) vm.addLink(url, title, col)
+        else uiScope.launch {
+            snack.currentSnackbarData?.dismiss()
+            if (snack.showSnackbar("Esse link já está salvo", actionLabel = "Abrir", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) opening = d.docId
+        }
+    }
+    val pickReminder: (LinkEntity) -> Unit = { l ->
+        if (android.os.Build.VERSION.SDK_INT >= 33) notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        val c = java.util.Calendar.getInstance().apply { if (l.remindAt > System.currentTimeMillis()) timeInMillis = l.remindAt else add(java.util.Calendar.HOUR_OF_DAY, 1) }
+        val dp = android.app.DatePickerDialog(context, { _, y, m, d ->
+            android.app.TimePickerDialog(context, { _, h, min ->
+                c.set(y, m, d, h, min, 0)
+                vm.setReminder(l, c.timeInMillis)
+                uiScope.launch { snack.showSnackbar("Lembrete: " + java.text.SimpleDateFormat("dd/MM 'às' HH:mm", java.util.Locale("pt", "BR")).format(c.time)) }
+            }, c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE), true).show()
+        }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH))
+        if (l.remindAt > System.currentTimeMillis()) dp.setButton(android.content.DialogInterface.BUTTON_NEUTRAL, "Remover") { _, _ -> vm.setReminder(l, 0) }
+        dp.show()
+    }
+    LaunchedEffect(pendingAction) {
+        when (pendingAction) { "save" -> showAdd = true; "search" -> showSearch = true }
+        vm.pendingAction.value = null
+    }
     val filteredFor: (String) -> List<LinkEntity> = { filter ->
         links.filter {
-            (if (filter == "Ocultos") it.hidden else !it.hidden && (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || it.collection == filter)) &&
-            (it.url.contains(search, true) || it.title.contains(search, true))
+            (if (filter == "Ocultos") it.hidden else !it.hidden && (filter == "Todos" || (filter == "Favoritos" && it.isFavorite) || (filter == "Não lidos" && !it.isRead) || it.collection == filter)) &&
+            (if (search.startsWith("#") && search.length > 1) it.tagList().any { t -> t.equals(search.drop(1).trim(), true) }
+             else it.url.contains(search, true) || it.title.contains(search, true) || it.tags.contains(search, true))
         }
     }
     val hiddenLinksCount = links.count { it.hidden }
     val shownFilter = collections.getOrNull(pagerState.targetPage) ?: collectionFilter
-    var showSearch by remember { mutableStateOf(false) }
     LaunchedEffect(showSearch) { if (showSearch) { delay(80); runCatching { searchFocus.requestFocus() } } }
     val pasteClip: () -> Unit = {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
         val t = runCatching { cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim() }.getOrNull()
-        if (t != null && Regex("^https?://\\S+$").matches(t)) vm.addLink(t, "", if (collectionFilter in allCollections) collectionFilter else "Inbox")
+        if (t != null && Regex("^https?://\\S+$").matches(t)) saveOrWarn(t, "", if (collectionFilter in allCollections) collectionFilter else "Inbox")
         else uiScope.launch { snack.currentSnackbarData?.dismiss(); snack.showSnackbar("Copie um link (https://…) primeiro") }
     }
 
@@ -326,7 +375,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 }
                 AnimatedVisibility(visible = clipUrl != null && links.none { it.url == clipUrl }) {
                     ClipBanner(clipUrl.orEmpty(), p, font, onSave = {
-                        vm.addLink(clipUrl.orEmpty(), "", if (collectionFilter in allCollections) collectionFilter else "Inbox"); clipDismissed = clipUrl; clipUrl = null
+                        saveOrWarn(clipUrl.orEmpty(), "", if (collectionFilter in allCollections) collectionFilter else "Inbox"); clipDismissed = clipUrl; clipUrl = null
                     }, onDismiss = { clipDismissed = clipUrl; clipUrl = null })
                 }
                 Spacer(Modifier.height(8.dp))
@@ -335,7 +384,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     LazyRow(state = chipsState, horizontalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.weight(1f)) {
                         items(collections, key = { it }) { item ->
                             val editable = item !in builtIns && item != "Ocultos"
-                            val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
+                            val cnt = when (item) { "Todos" -> links.count { !it.hidden }; "Favoritos" -> links.count { !it.hidden && it.isFavorite }; "Não lidos" -> links.count { !it.hidden && !it.isRead }; "Ocultos" -> hiddenLinksCount; else -> links.count { !it.hidden && it.collection == item } }
                             Box(Modifier.animateItem()) {
                                 MinimalTab(item, cnt, shownFilter == item, p, font,
                                     onClick = { if (collectionFilter == item && editable) chipMenu = item else collectionFilter = item }, onLongClick = if (editable) ({ chipMenu = item }) else null)
@@ -344,6 +393,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                                         onClick = { chipMenu = null; renameText = item; renameTarget = item })
                                     DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
                                         onClick = { chipMenu = null; vm.hideCollection(item); if (collectionFilter == item) collectionFilter = "Todos" })
+                                    DropdownMenuItem(text = { Text(if (item in lockedTabs) "Desbloquear aba" else "Bloquear aba", color = primaryText) }, leadingIcon = { Icon(if (item in lockedTabs) Icons.Default.LockOpen else Icons.Default.Lock, null, tint = muted) },
+                                        onClick = { chipMenu = null; if (item in lockedTabs) biometricUnlock(context, "Remover bloqueio da aba") { vm.toggleTabLock(item) } else vm.toggleTabLock(item) })
                                     DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
                                         onClick = { chipMenu = null; deleteTarget = item })
                                 }
@@ -375,6 +426,12 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     }
                     if (!linksLoaded) {
                         SkeletonList(p, gridView)
+                    } else if (filter in lockedTabs && filter !in unlockedTabs) {
+                        Column(Modifier.fillMaxSize().padding(bottom = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = muted, modifier = Modifier.size(32.dp))
+                            Text("Aba bloqueada", color = primaryText, fontSize = font(15), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+                            TextButton(onClick = { biometricUnlock(context, "Desbloquear \"$filter\"") { unlockedTabs.add(filter) } }) { Text("Desbloquear") }
+                        }
                     } else if (shown.isEmpty()) {
                         if (filter == "Todos" && search.isBlank()) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 20.dp, bottom = 110.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -431,8 +488,10 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                                     SwipeLinkItem(
                                         link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem().staggerIn(order, epoch, armed),
                                         onOpen = { opening = link.docId }, onToggleFav = { vm.toggleFavorite(link) }, onDelete = { deleteWithUndo(link) },
-                                        onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection },
-                                        onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) }
+                                        onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection; editTags = link.tagList().joinToString(", ") },
+                                        onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) },
+                                        onToggleRead = { vm.markRead(link, !link.isRead) }, onRemind = { pickReminder(link) },
+                                        onTag = { t -> search = "#$t"; showSearch = true }
                                     )
                                 }
                             }
@@ -502,11 +561,13 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     OutlinedTextField(value = editTitle, onValueChange = { editTitle = it }, label = { Text("Título") }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(value = editCollection, onValueChange = { editCollection = it }, label = { Text("Coleção") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = editTags, onValueChange = { editTags = it }, label = { Text("Tags (separadas por vírgula)") }, placeholder = { Text("receita, trabalho") }, modifier = Modifier.fillMaxWidth())
                 } },
                 confirmButton = { TextButton(onClick = {
                     val url = editUrl.trim()
                     if (url.startsWith("http://") || url.startsWith("https://")) {
-                        vm.updateLink(target.copy(url = url, title = editTitle.trim(), collection = editCollection.trim().ifBlank { "Inbox" }))
+                        vm.updateLink(target.copy(url = url, title = editTitle.trim(), collection = editCollection.trim().ifBlank { "Inbox" }, tags = editTags.split(',', '#').map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")))
                         editLinkTarget = null
                     }
                 }) { Text("Salvar") } },
@@ -532,7 +593,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 confirmButton = { TextButton(onClick = {
                     val url = manualUrl.trim()
                     if (url.startsWith("http://") || url.startsWith("https://")) {
-                        vm.addLink(url, manualTitle.trim(), collection.trim().ifBlank { "Inbox" })
+                        saveOrWarn(url, manualTitle.trim(), collection.trim().ifBlank { "Inbox" })
                         manualUrl = ""; manualTitle = ""; showAdd = false
                     }
                 }) { Text("Salvar") } },
@@ -570,7 +631,42 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                 onResetAvatar = { vm.saveCustomAvatar(null) },
                 onLogin = { showSettings = false; vm.goToLogin() },
                 onLogout = { showSettings = false; vm.logout() },
-                onClose = { showSettings = false }
+                onClose = { showSettings = false },
+                extra = {
+                    val exportL = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+                        if (uri != null) runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(vm.exportJson().toByteArray()) } }
+                            .onSuccess { uiScope.launch { snack.showSnackbar("Backup exportado (${links.size} links)") } }
+                    }
+                    val importJ = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri != null) runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }.orEmpty() }
+                            .mapCatching { Backup.fromJson(it, "") }
+                            .onSuccess { vm.importLinks(it) { n -> uiScope.launch { snack.showSnackbar("$n links importados") } } }
+                            .onFailure { uiScope.launch { snack.showSnackbar("Arquivo de backup inválido") } }
+                    }
+                    val importH = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        if (uri != null) runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }.orEmpty() }
+                            .mapCatching { Backup.fromBookmarksHtml(it, "") }
+                            .onSuccess { vm.importLinks(it) { n -> uiScope.launch { snack.showSnackbar("$n favoritos importados") } } }
+                    }
+                    SettingsGroup("Navegador", p) {
+                        SettingRow(label = "Abrir links dentro do app", subtitle = if (inAppBrowser) "Navegador do app (Custom Tabs)" else "Navegador externo", p = p, onClick = { vm.setInAppBrowser(!inAppBrowser) }) { SettingSwitch(inAppBrowser, p) }
+                    }
+                    SettingsGroup("Segurança", p) {
+                        SettingRow(label = "Bloquear com biometria", subtitle = "Digital ou rosto ao abrir o app", p = p, onClick = { biometricUnlock(context, "Confirmar") { vm.setAppLock(!appLock) } }) { SettingSwitch(appLock, p) }
+                        SettingDivider(p)
+                        SettingRow(label = "Abas bloqueadas", subtitle = if (lockedTabs.isEmpty()) "Segure uma aba e escolha Bloquear aba" else lockedTabs.sorted().joinToString(", "), p = p) {}
+                    }
+                    SettingsGroup("Widget", p) {
+                        SettingRow(label = "Mostrar favoritos no widget", subtitle = if (widgetFavs) "Favoritos" else "Recentes", p = p, onClick = { vm.setWidgetFavorites(!widgetFavs) }) { SettingSwitch(widgetFavs, p) }
+                    }
+                    SettingsGroup("Backup", p) {
+                        SettingRow(label = "Exportar backup (JSON)", p = p, onClick = { exportL.launch("link-backup.json") }) { Text("Exportar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                        SettingDivider(p)
+                        SettingRow(label = "Importar backup (JSON)", p = p, onClick = { importJ.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Text("Importar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                        SettingDivider(p)
+                        SettingRow(label = "Importar favoritos do Chrome", subtitle = "Arquivo HTML exportado do navegador", p = p, onClick = { importH.launch(arrayOf("text/html", "*/*")) }) { Text("Importar", color = p.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
             )
         }
     }
@@ -601,7 +697,7 @@ private fun SettingsScreen(
     p: Palette, theme: ThemeMode, scale: TextScale, amoledInDark: Boolean, font: AppFont, gridView: Boolean, cardSize: CardSize, hiddenCols: Set<String>, hiddenLinksCount: Int, user: com.google.firebase.auth.FirebaseUser?,
     avatarUrl: String?, hasCustomAvatar: Boolean,
     onTheme: (ThemeMode) -> Unit, onScale: (TextScale) -> Unit, onAmoledInDark: (Boolean) -> Unit, onFont: (AppFont) -> Unit, onGrid: (Boolean) -> Unit, onCardSize: (CardSize) -> Unit, onUnhideCol: (String) -> Unit, onShowHiddenLinks: () -> Unit,
-    onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit
+    onPickAvatar: () -> Unit, onResetAvatar: () -> Unit, onLogin: () -> Unit, onLogout: () -> Unit, onClose: () -> Unit, extra: @Composable () -> Unit = {}
 ) {
     Column(Modifier.fillMaxSize().background(p.canvas).pointerInput(Unit) { detectTapGestures { } }.statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -688,6 +784,7 @@ private fun SettingsScreen(
                 }
             }
 
+            extra()
             SettingsGroup("Sobre", p) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current
                 val versionName = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
@@ -725,6 +822,10 @@ private fun SettingRow(
         trailing()
     }
 }
+
+@Composable
+private fun SettingSwitch(v: Boolean, p: Palette) = Switch(checked = v, onCheckedChange = null,
+    colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = onAccentOf(p), uncheckedTrackColor = Color.Transparent, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
 
 @Composable
 private fun radioColors(p: Palette) = RadioButtonDefaults.colors(selectedColor = p.accent, unselectedColor = p.muted)

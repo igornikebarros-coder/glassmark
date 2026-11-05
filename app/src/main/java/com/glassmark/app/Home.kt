@@ -245,7 +245,8 @@ private fun SummaryBlock(link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, bu
 fun SwipeLinkItem(
     link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
     modifier: Modifier = Modifier,
-    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit
+    onOpen: () -> Unit, onToggleFav: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit, onHide: () -> Unit, onSummarize: () -> Unit,
+    onToggleRead: () -> Unit = {}, onRemind: () -> Unit = {}, onTag: (String) -> Unit = {}
 ) {
     val hide by rememberUpdatedState(onHide)
     val del by rememberUpdatedState(onDelete)
@@ -286,13 +287,13 @@ fun SwipeLinkItem(
         LaunchedEffect(Unit) { snapshotFlow { CardMenu.req }.collect { if (it == null) menu = false } }
         val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
         Box(Modifier.onGloballyPositioned { bounds = it.boundsInWindow() }.graphicsLayer { alpha = if (menu && CardMenu.req != null) 0f else 1f }) {
-            LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen,
+            LinkCard(link, p, fs, opening, grid, size, summarizing, hiddenMode, onOpen, onTag = onTag,
                 onLongPress = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = true })
         }
         if (menu) {
             CardMenu.req = CardMenuReq(link, bounds, hiddenMode,
                 card = { LinkCard(link, p, fs, false, grid, size, summarizing, hiddenMode, onOpen = {}, onLongPress = null) },
-                onOpen = onOpen, onToggleFav = onToggleFav, onDelete = onDelete, onEdit = onEdit, onHide = onHide, onSummarize = onSummarize,
+                onOpen = onOpen, onToggleFav = onToggleFav, onDelete = onDelete, onEdit = onEdit, onHide = onHide, onSummarize = onSummarize, onToggleRead = onToggleRead, onRemind = onRemind,
                 onClosed = { menu = false })
         }
     }
@@ -302,7 +303,7 @@ private class MenuAction(val icon: ImageVector, val label: String, val danger: B
 
 class CardMenuReq(
     val link: LinkEntity, val bounds: androidx.compose.ui.geometry.Rect, val hiddenMode: Boolean, val card: @Composable () -> Unit,
-    val onOpen: () -> Unit, val onToggleFav: () -> Unit, val onDelete: () -> Unit, val onEdit: () -> Unit, val onHide: () -> Unit, val onSummarize: () -> Unit,
+    val onOpen: () -> Unit, val onToggleFav: () -> Unit, val onDelete: () -> Unit, val onEdit: () -> Unit, val onHide: () -> Unit, val onSummarize: () -> Unit, val onToggleRead: () -> Unit, val onRemind: () -> Unit,
     val onClosed: () -> Unit
 )
 
@@ -330,6 +331,8 @@ fun CardMenuOverlay(p: Palette, fs: (Int) -> TextUnit, progress: Float, closing:
         })
         add(MenuAction(if (link.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (link.isFavorite) "Desfavoritar" else "Favoritar") { r.onToggleFav() })
         add(MenuAction(Icons.Default.AutoAwesome, if (link.summary.isBlank()) "Resumir" else "Resumo") { r.onSummarize() })
+        add(MenuAction(if (link.isRead) Icons.Default.MarkEmailUnread else Icons.Default.DoneAll, if (link.isRead) "Não lido" else "Lido") { r.onToggleRead() })
+        add(MenuAction(Icons.Default.Alarm, if (link.remindAt > System.currentTimeMillis()) "Lembrete" else "Lembrar") { r.onRemind() })
         add(MenuAction(Icons.Default.Edit, "Editar") { r.onEdit() })
         add(MenuAction(if (r.hiddenMode) Icons.Default.Visibility else Icons.Default.VisibilityOff, if (r.hiddenMode) "Mostrar" else "Ocultar") { r.onHide() })
         add(MenuAction(Icons.Default.Delete, "Apagar", danger = true) { r.onDelete() })
@@ -402,7 +405,7 @@ fun CardMenuOverlay(p: Palette, fs: (Int) -> TextUnit, progress: Float, closing:
 @Composable
 private fun LinkCard(
     link: LinkEntity, p: Palette, fs: (Int) -> TextUnit, opening: Boolean, grid: Boolean, size: CardSize, summarizing: Boolean, hiddenMode: Boolean,
-    onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier
+    onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier, onTag: (String) -> Unit = {}
 ) {
     val src = remember { MutableInteractionSource() }
     val sc by animateFloatAsState(if (opening) 1.04f else 1f, motionSpring(stiffness = 400f), label = "open")
@@ -439,6 +442,13 @@ private fun LinkCard(
                         if (link.isFavorite) Text(" · Favorito", color = pink, fontSize = fs(11), maxLines = 1)
                     }
                     if (link.collection != "Inbox") Text(link.collection, color = p.accent, fontSize = fs(11), modifier = Modifier.padding(top = 2.dp))
+                    val tags = link.tagList()
+                    if (tags.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        tags.forEach { t ->
+                            Text("#$t", color = p.muted, fontSize = fs(11), fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(p.text.copy(alpha = .07f)).clickable { onTag(t) }.padding(horizontal = 8.dp, vertical = 3.dp))
+                        }
+                    }
                     SummaryBlock(link, p, fs, summarizing)
                 }
             }
