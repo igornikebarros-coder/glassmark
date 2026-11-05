@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Visibility
@@ -103,6 +104,7 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Motion.refresh(this)
         if (savedInstanceState == null) handleShare(intent)
         setContent {
             val user by vm.user.collectAsState()
@@ -113,12 +115,13 @@ class MainActivity : ComponentActivity() {
             GlassmarkTheme(mode, amoledDark, font) {
                 AnimatedContent(
                     targetState = user == null && !guest,
-                    transitionSpec = { (fadeIn(tween(300)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300))) togetherWith fadeOut(tween(180)) },
+                    transitionSpec = { if (Motion.reduced) fadeIn(tween(150)) togetherWith fadeOut(tween(150)) else (fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))) togetherWith fadeOut(tween(160)) },
                     label = "nav"
                 ) { showAuth -> if (showAuth) AuthScreen(vm) else GlassmarkScreen(vm) }
             }
         }
     }
+    override fun onResume() { super.onResume(); Motion.refresh(this) }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleShare(intent) }
     private fun handleShare(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
@@ -132,6 +135,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun GlassmarkScreen(vm: AppViewModel) {
     val links by vm.links.collectAsState()
+    val linksLoaded by vm.linksLoaded.collectAsState()
     val allCollections by vm.collections.collectAsState()
     val user by vm.user.collectAsState()
     val customAvatarUri by vm.customAvatarUri.collectAsState()
@@ -359,12 +363,19 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                     verticalAlignment = Alignment.Top,
                     flingBehavior = PagerDefaults.flingBehavior(
                         state = pagerState, snapPositionalThreshold = 0.2f,
-                        snapAnimationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                        snapAnimationSpec = motionSpring(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
                     )
                 ) { page ->
                     val filter = collections.getOrNull(page) ?: "Todos"
                     val shown = filteredFor(filter).sortedByDescending { it.savedAt }
-                    if (shown.isEmpty()) {
+                    var epoch by remember { mutableIntStateOf(0) }
+                    var armed by remember { mutableStateOf(false) }
+                    LaunchedEffect(pagerState.settledPage, linksLoaded) {
+                        if (linksLoaded && pagerState.settledPage == page) { armed = true; epoch++; kotlinx.coroutines.delay(700); armed = false }
+                    }
+                    if (!linksLoaded) {
+                        SkeletonList(p, gridView)
+                    } else if (shown.isEmpty()) {
                         if (filter == "Todos" && search.isBlank()) {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 20.dp, bottom = 110.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Box(Modifier.size(72.dp).clip(RoundedCornerShape(22.dp)).background(accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
@@ -414,10 +425,11 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                         ) {
                             groups.forEach { (label, list) ->
                                 item(key = "__h_$label", span = { GridItemSpan(maxLineSpan) }) { TimelineHeader(label, p, font) }
-                                items(list, key = { it.docId }) { link ->
+                                itemsIndexed(list, key = { _, it -> it.docId }) { idx, link ->
                                     LaunchedEffect(link.docId) { vm.fetchOg(link) }
+                                    val order = remember(epoch) { shown.indexOf(link).coerceAtLeast(idx) }
                                     SwipeLinkItem(
-                                        link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem(),
+                                        link, p, font, opening == link.docId, gridView, cardSize, link.docId in summarizing, filter == "Ocultos", Modifier.animateItem().staggerIn(order, epoch, armed),
                                         onOpen = { opening = link.docId }, onToggleFav = { vm.toggleFavorite(link) }, onDelete = { deleteWithUndo(link) },
                                         onEdit = { editLinkTarget = link; editUrl = link.url; editTitle = link.title; editCollection = link.collection },
                                         onHide = { hideWithUndo(link) }, onSummarize = { vm.summarize(link) }
@@ -546,8 +558,8 @@ private fun GlassmarkScreen(vm: AppViewModel) {
         androidx.activity.compose.BackHandler(enabled = showSettings) { showSettings = false }
         AnimatedVisibility(
             visible = showSettings, modifier = Modifier.fillMaxSize(),
-            enter = slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(260)),
-            exit = slideOutHorizontally(tween(220)) { it / 3 } + fadeOut(tween(200))
+            enter = if (Motion.reduced) fadeIn(tween(150)) else slideInHorizontally(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)) { it / 3 } + fadeIn(tween(220)),
+            exit = if (Motion.reduced) fadeOut(tween(150)) else slideOutHorizontally(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)) { it / 3 } + fadeOut(tween(180))
         ) {
             SettingsScreen(
                 p = p, theme = theme, scale = scale, amoledInDark = amoledDark, font = appFont, gridView = gridView, cardSize = cardSize, hiddenCols = hiddenCols, hiddenLinksCount = hiddenLinksCount, user = user,

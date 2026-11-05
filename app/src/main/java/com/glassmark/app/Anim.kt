@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 /** Escala sutil enquanto o item está pressionado (usa o mesmo interactionSource do clique). */
 fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f): Modifier = composed {
     val isPressed by source.collectIsPressedAsState()
-    val s by animateFloatAsState(if (isPressed) pressed else 1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium), label = "press")
+    val s by animateFloatAsState(if (isPressed) pressed else 1f, motionSpring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "press")
     graphicsLayer { scaleX = s; scaleY = s }
 }
 
@@ -65,6 +65,6 @@ fun PopIn(content: @Composable () -> Unit) {
     val state = remember { MutableTransitionState(false).apply { targetState = true } }
     AnimatedVisibility(
         visibleState = state,
-        enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.92f, animationSpec = tween(220))
+        enter = if (Motion.reduced) fadeIn(tween(150)) else fadeIn(tween(160)) + scaleIn(initialScale = 0.9f, animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium))
     ) { content() }
 }

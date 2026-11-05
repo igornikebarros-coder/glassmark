@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -62,11 +63,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val syncError = MutableStateFlow<String?>(null)     // erro de sincronização
     val offerUpload = MutableStateFlow(false)
     val guestCount = MutableStateFlow(0)
+    val linksLoaded = MutableStateFlow(false)
 
     private val ownerUid: StateFlow<String> = user.map { it?.uid.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, auth.currentUser?.uid.orEmpty())
 
-    val links: StateFlow<List<LinkEntity>> = ownerUid.flatMapLatest { repo.observeLinks(it) }
+    val links: StateFlow<List<LinkEntity>> = ownerUid.flatMapLatest { repo.observeLinks(it).onEach { linksLoaded.value = true } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val collections: StateFlow<List<String>> = ownerUid.flatMapLatest { uid ->

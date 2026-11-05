@@ -204,7 +204,7 @@ fun MinimalTab(
     onClick: () -> Unit, onLongClick: (() -> Unit)? = null
 ) {
     val fg by animateColorAsState(if (selected) p.text else p.muted, androidx.compose.animation.core.tween(110), label = "tabFg")
-    val line by animateColorAsState(if (selected) p.accent else Color.Transparent, androidx.compose.animation.core.tween(110), label = "tabLine")
+    val line by animateColorAsState(if (selected) p.accent else Color.Transparent, motionSpring(stiffness = 900f), label = "tabLine")
     val click by rememberUpdatedState(onClick)
     val long by rememberUpdatedState(onLongClick)
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -249,13 +249,17 @@ fun SwipeLinkItem(
 ) {
     val hide by rememberUpdatedState(onHide)
     val del by rememberUpdatedState(onDelete)
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+    val swipeHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val state = rememberSwipeToDismissBoxState(positionalThreshold = { it * 0.35f }, confirmValueChange = { v ->
         when (v) {
-            SwipeToDismissBoxValue.StartToEnd -> { hide(); true }
-            SwipeToDismissBoxValue.EndToStart -> { del(); true }
+            SwipeToDismissBoxValue.StartToEnd -> { swipeHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); hide(); true }
+            SwipeToDismissBoxValue.EndToStart -> { swipeHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); del(); true }
             else -> false
         }
     })
+    LaunchedEffect(state) {
+        snapshotFlow { state.targetValue }.collect { if (it != SwipeToDismissBoxValue.Settled) swipeHaptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) }
+    }
     SwipeToDismissBox(
         state = state, modifier = modifier,
         backgroundContent = {
@@ -401,7 +405,7 @@ private fun LinkCard(
     onOpen: () -> Unit, onLongPress: (() -> Unit)?, cardModifier: Modifier = Modifier
 ) {
     val src = remember { MutableInteractionSource() }
-    val sc by animateFloatAsState(if (opening) 1.04f else 1f, spring(stiffness = 400f), label = "open")
+    val sc by animateFloatAsState(if (opening) 1.04f else 1f, motionSpring(stiffness = 400f), label = "open")
     val d = domainOf(link.url)
     val hasOg = link.ogImage.isNotBlank() && link.ogImage != "-"
     val banner = hasOg && (grid || size == CardSize.LARGE)
