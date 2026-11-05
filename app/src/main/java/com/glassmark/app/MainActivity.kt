@@ -82,6 +82,8 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
@@ -126,7 +128,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val ask = { biometricUnlock(this@MainActivity, "Desbloquear o Link") { unlocked = true } }
                     LaunchedEffect(Unit) { ask() }
                     Column(Modifier.fillMaxSize().background(p.canvas).pointerInput(Unit) { detectTapGestures { } }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Icon(Icons.Default.Lock, null, tint = p.accent, modifier = Modifier.size(42.dp))
+                        Icon(Icons.Filled.Lock, null, tint = p.accent, modifier = Modifier.size(42.dp))
                         Text("Link bloqueado", color = p.text, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 12.dp))
                         TextButton(onClick = ask) { Text("Desbloquear") }
                     }
@@ -393,7 +395,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                                         onClick = { chipMenu = null; renameText = item; renameTarget = item })
                                     DropdownMenuItem(text = { Text("Ocultar", color = primaryText) }, leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = muted) },
                                         onClick = { chipMenu = null; vm.hideCollection(item); if (collectionFilter == item) collectionFilter = "Todos" })
-                                    DropdownMenuItem(text = { Text(if (item in lockedTabs) "Desbloquear aba" else "Bloquear aba", color = primaryText) }, leadingIcon = { Icon(if (item in lockedTabs) Icons.Default.LockOpen else Icons.Default.Lock, null, tint = muted) },
+                                    DropdownMenuItem(text = { Text(if (item in lockedTabs) "Desbloquear aba" else "Bloquear aba", color = primaryText) }, leadingIcon = { Icon(if (item in lockedTabs) Icons.Filled.LockOpen else Icons.Filled.Lock, null, tint = muted) },
                                         onClick = { chipMenu = null; if (item in lockedTabs) biometricUnlock(context, "Remover bloqueio da aba") { vm.toggleTabLock(item) } else vm.toggleTabLock(item) })
                                     DropdownMenuItem(text = { Text("Apagar", color = p.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = p.error) },
                                         onClick = { chipMenu = null; deleteTarget = item })
@@ -428,7 +430,7 @@ private fun GlassmarkScreen(vm: AppViewModel) {
                         SkeletonList(p, gridView)
                     } else if (filter in lockedTabs && filter !in unlockedTabs) {
                         Column(Modifier.fillMaxSize().padding(bottom = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Icon(Icons.Default.Lock, contentDescription = null, tint = muted, modifier = Modifier.size(32.dp))
+                            Icon(Icons.Filled.Lock, contentDescription = null, tint = muted, modifier = Modifier.size(32.dp))
                             Text("Aba bloqueada", color = primaryText, fontSize = font(15), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
                             TextButton(onClick = { biometricUnlock(context, "Desbloquear \"$filter\"") { unlockedTabs.add(filter) } }) { Text("Desbloquear") }
                         }
